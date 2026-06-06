@@ -18,13 +18,28 @@ struct RootView: View {
     @State private var launcherTouchStart: CFTimeInterval?
     @State private var launcherIsDragging = false
     @State private var bridge = JSBridge()
+    @StateObject private var webViewStatus = WebViewStatusModel()
 
     var body: some View {
         ZStack {
             if let active = store.activeEndpoint {
-                HermesWebView(endpoint: active, bridge: bridge, reconnectGeneration: store.connectionEpoch)
-                    .id("\(active.url.absoluteString)|\(store.connectionEpoch)")
-                    .ignoresSafeArea()
+                HermesWebView(
+                    endpoint: active,
+                    bridge: bridge,
+                    reconnectGeneration: store.connectionEpoch,
+                    statusModel: webViewStatus,
+                    endpointStore: store
+                )
+                .id("\(active.url.absoluteString)|\(store.connectionEpoch)")
+                .ignoresSafeArea()
+
+                if webViewStatus.state == .loading {
+                    loadingOverlay
+                }
+
+                if case .failed(let message) = webViewStatus.state {
+                    failureOverlay(message: message)
+                }
 
                 launcherOverlay
             } else {
@@ -38,9 +53,66 @@ struct RootView: View {
         }
     }
 
+    private var loadingOverlay: some View {
+        VStack(spacing: 14) {
+            ProgressView()
+                .progressViewStyle(.circular)
+                .scaleEffect(1.15)
+
+            Text("Connecting…")
+                .font(.headline)
+
+            if let active = store.activeEndpoint {
+                Text(active.displayName)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: 260)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .shadow(radius: 20)
+    }
+
+    private func failureOverlay(message: String) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(.orange)
+
+            Text("Connection failed")
+                .font(.headline)
+
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            HStack(spacing: 12) {
+                Button("Open Connections") {
+                    showingSettings = true
+                }
+                .buttonStyle(.bordered)
+
+                Button("Retry") {
+                    webViewStatus.markLoading()
+                    if let active = store.activeEndpoint {
+                        try? store.setActive(active)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: 320)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .shadow(radius: 20)
+    }
+
     private var launcherOverlay: some View {
         ZStack {
-            // While touching/dragging the launcher, absorb all gestures behind it.
             if launcherTouchStart != nil || launcherIsDragging {
                 Color.clear
                     .contentShape(Rectangle())
@@ -75,7 +147,6 @@ struct RootView: View {
                     launcherTouchStart = CACurrentMediaTime()
                 }
 
-                // Require a short hold before drag to avoid accidental moves.
                 guard holdElapsed() >= LauncherUX.holdToDragSeconds else { return }
                 launcherIsDragging = true
 
@@ -87,12 +158,10 @@ struct RootView: View {
                 let holdTime = holdElapsed()
                 let moveDistance = hypot(value.translation.width, value.translation.height)
 
-                // Treat quick touch as a normal tap to open settings.
                 if holdTime < LauncherUX.holdToDragSeconds && moveDistance < LauncherUX.tapSlop {
                     showingSettings = true
                 }
 
-                // If user held long enough but moved very little, still commit final point.
                 if holdTime >= LauncherUX.holdToDragSeconds {
                     let clamped = clampLauncherPoint(value.location, in: size, safeTop: safeTop, safeBottom: safeBottom)
                     launcherXRatio = clamped.x / max(size.width, 1)

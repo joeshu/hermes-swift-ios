@@ -6,15 +6,30 @@ public struct HermesWebView: UIViewRepresentable {
     public let endpoint: HermesEndpoint
     public let bridge: JSBridge
     public let reconnectGeneration: Int
+    public let statusModel: WebViewStatusModel?
+    public let endpointStore: EndpointStore?
 
-    public init(endpoint: HermesEndpoint, bridge: JSBridge, reconnectGeneration: Int = 0) {
+    public init(
+        endpoint: HermesEndpoint,
+        bridge: JSBridge,
+        reconnectGeneration: Int = 0,
+        statusModel: WebViewStatusModel? = nil,
+        endpointStore: EndpointStore? = nil
+    ) {
         self.endpoint = endpoint
         self.bridge = bridge
         self.reconnectGeneration = reconnectGeneration
+        self.statusModel = statusModel
+        self.endpointStore = endpointStore
     }
 
     public func makeCoordinator() -> NavigationDelegate {
-        NavigationDelegate(pinner: endpoint.leafCertFingerprint.map(FingerprintPinner.init))
+        NavigationDelegate(
+            pinner: endpoint.leafCertFingerprint.map(FingerprintPinner.init),
+            statusModel: statusModel,
+            endpoint: endpoint,
+            endpointStore: endpointStore
+        )
     }
 
     public func makeUIView(context: Context) -> WKWebView {
@@ -24,15 +39,16 @@ public struct HermesWebView: UIViewRepresentable {
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
         bridge.attach(to: webView)
+        statusModel?.markLoading()
         webView.load(makeRequest())
         return webView
     }
 
     public func updateUIView(_ uiView: WKWebView, context: Context) {
-        // Reload when the endpoint URL changes (e.g. user switched active endpoint in Settings).
         if uiView.url != endpoint.url || context.coordinator.reconnectGeneration != reconnectGeneration {
             context.coordinator.pinner = endpoint.leafCertFingerprint.map(FingerprintPinner.init)
             context.coordinator.reconnectGeneration = reconnectGeneration
+            statusModel?.markLoading()
             uiView.load(makeRequest())
         }
     }
