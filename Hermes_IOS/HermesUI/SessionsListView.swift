@@ -67,15 +67,6 @@ public struct SessionsListView: View {
             if newValue.isEmpty { isSearching = false }
             else { isSearching = true; Task { await performSearch() } }
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if !sessions.isEmpty {
-                    Button { showCleanupAlert = true } label: { Image(systemName: "trash") }.disabled(isLoading)
-                }
-                Button { Task { await loadSessions() } } label: { Image(systemName: "arrow.clockwise") }.disabled(isLoading)
-                Button { Task { await createNewSession() } } label: { Image(systemName: "plus") }.disabled(isLoading)
-            }
-        }
         .alert("Cleanup empty sessions", isPresented: $showCleanupAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Remove empty", role: .destructive) { Task { await performCleanup() } }

@@ -17,40 +17,24 @@ public struct SkillsListView: View {
     public init() {}
 
     public var body: some View {
-        NavigationStack {
-            ZStack {
-                if isLoading {
-                    loadingView
-                } else if let errorMessage {
-                    errorView(message: errorMessage)
-                } else if skills.isEmpty {
-                    emptyView
-                } else {
-                    listView
-                }
-            }
-            .navigationTitle("Skills")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { showNewSkillSheet = true } label: {
-                        Image(systemName: "plus")
-                    }
-                    .disabled(isLoading)
-
-                    Button { Task { await loadSkills() } } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(isLoading)
-                }
+        VStack(spacing: 0) {
+            if isLoading {
+                loadingView
+            } else if let errorMessage {
+                errorView(message: errorMessage)
+            } else if skills.isEmpty {
+                emptyView
+            } else {
+                listView
             }
         }
+        .navigationTitle("Skills")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: .constant(""), prompt: "Search skills…")
         .task { await loadSkills() }
         .alert("Delete skill?", isPresented: $showDeleteAlert, presenting: skillToDelete) { skill in
             Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
-                Task { await deleteSkill(skill.name) }
-            }
+            Button("Delete", role: .destructive) { Task { await deleteSkill(skill.name) } }
         } message: { skill in
             Text("Delete \"\(skill.name)\" and all its files? This cannot be undone.")
         }
