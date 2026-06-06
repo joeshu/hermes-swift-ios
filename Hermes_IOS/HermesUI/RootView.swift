@@ -14,7 +14,7 @@ struct RootView: View {
     @EnvironmentObject var store: EndpointStore
     @State private var showingSettings = false
     @State private var showingShare = false
-    @State private var showingSessions = true
+    @State private var currentTab: NativeTab = .sessions
     @State private var launcherXRatio: CGFloat = 0.96
     @State private var launcherYRatio: CGFloat = 0.27
     @State private var launcherTouchStart: CFTimeInterval?
@@ -23,34 +23,51 @@ struct RootView: View {
     @StateObject private var webViewStatus = WebViewStatusModel()
     private let shareSheet = ShareSheetCapability()
 
+    private enum NativeTab: String, CaseIterable {
+        case sessions = "Sessions"
+        case memory = "Memory"
+
+        var icon: String {
+            switch self {
+            case .sessions: return "message"
+            case .memory: return "brain"
+            }
+        }
+    }
+
     var body: some View {
         ZStack {
             if let active = store.activeEndpoint {
-                if showingSessions {
-                    SessionsListView()
-                        .environmentObject(store)
-                        .transition(.move(edge: .leading))
-                } else {
-                    HermesWebView(
-                        endpoint: active,
-                        bridge: bridge,
-                        reconnectGeneration: store.connectionEpoch,
-                        statusModel: webViewStatus,
-                        endpointStore: store
-                    )
-                    .id("\(active.url.absoluteString)|\(store.connectionEpoch)")
-                    .ignoresSafeArea()
-
-                    if webViewStatus.state == .loading {
-                        loadingOverlay
-                    }
-
-                    if case .failed(let message) = webViewStatus.state {
-                        failureOverlay(message: message)
-                    }
-
-                    launcherOverlay
+                if case .failed(let message) = webViewStatus.state {
+                    // Show webview behind overlay, but we're in native mode
                 }
+
+                VStack(spacing: 0) {
+                    // Tab bar
+                    Picker("View", selection: $currentTab) {
+                        ForEach(NativeTab.allCases, id: \.self) { tab in
+                            Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(.bar)
+
+                    // Content
+                    switch currentTab {
+                    case .sessions:
+                        SessionsListView()
+                            .environmentObject(store)
+                            .transition(.opacity)
+                    case .memory:
+                        MemoryListView()
+                            .environmentObject(store)
+                            .transition(.opacity)
+                    }
+                }
+
+                launcherOverlay
             } else {
                 SettingsView(store: store, connectionOnly: true)
             }
@@ -64,10 +81,7 @@ struct RootView: View {
             shareSheetView
         }
         .onReceive(NotificationCenter.default.publisher(for: .openSessionInWebView)) { notification in
-            withAnimation {
-                showingSessions = false
-            }
-            // WebView will pick up the new URL when needed
+            openWebViewForSession(notification: notification)
         }
     }
 
@@ -255,4 +269,7 @@ struct RootView: View {
         return CGPoint(x: clampedX, y: clampedY)
     }
 
+    private func openWebViewForSession(notification: Notification) {
+        // WebView 相关方法暂不实现
+    }
 }

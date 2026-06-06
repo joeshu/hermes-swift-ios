@@ -195,4 +195,69 @@ public actor HermesGatewayClient {
         let response = try? JSONDecoder().decode(CreateSessionResponse.self, from: data)
         return response?.session?.sessionId
     }
+
+    // MARK: - Memory API
+
+    public func fetchMemory(baseURL: URL) async throws -> MemoryDTO {
+        let url = baseURL.appendingPathComponent("/api/memory")
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 15
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode(MemoryDTO.self, from: data)
+    }
+
+    public func writeMemory(baseURL: URL, section: String, content: String) async throws -> Bool {
+        let url = baseURL.appendingPathComponent("/api/memory/write")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "section": section,
+            "content": content
+        ])
+        request.timeoutInterval = 15
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let result = try JSONDecoder().decode(MemoryWriteResult.self, from: data)
+        return result.ok
+    }
+}
+
+// MARK: - Memory DTOs
+
+extension HermesGatewayClient {
+    public struct MemoryDTO: Decodable, Sendable {
+        public let memory: String
+        public let user: String
+        public let soul: String
+        public let memoryPath: String?
+        public let userPath: String?
+        public let soulPath: String?
+        public let memoryMtime: Double?
+        public let userMtime: Double?
+        public let soulMtime: Double?
+        public let externalNotesEnabled: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case memory, user, soul
+            case memoryPath = "memory_path"
+            case userPath = "user_path"
+            case soulPath = "soul_path"
+            case memoryMtime = "memory_mtime"
+            case userMtime = "user_mtime"
+            case soulMtime = "soul_mtime"
+            case externalNotesEnabled = "external_notes_enabled"
+        }
+    }
+
+    public struct MemoryWriteResult: Decodable, Sendable {
+        public let ok: Bool
+        public let section: String?
+    }
 }
