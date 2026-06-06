@@ -14,6 +14,7 @@ struct RootView: View {
     @EnvironmentObject var store: EndpointStore
     @State private var showingSettings = false
     @State private var showingShare = false
+    @State private var showingSessions = true
     @State private var launcherXRatio: CGFloat = 0.96
     @State private var launcherYRatio: CGFloat = 0.27
     @State private var launcherTouchStart: CFTimeInterval?
@@ -25,25 +26,31 @@ struct RootView: View {
     var body: some View {
         ZStack {
             if let active = store.activeEndpoint {
-                HermesWebView(
-                    endpoint: active,
-                    bridge: bridge,
-                    reconnectGeneration: store.connectionEpoch,
-                    statusModel: webViewStatus,
-                    endpointStore: store
-                )
-                .id("\(active.url.absoluteString)|\(store.connectionEpoch)")
-                .ignoresSafeArea()
+                if showingSessions {
+                    SessionsListView()
+                        .environmentObject(store)
+                        .transition(.move(edge: .leading))
+                } else {
+                    HermesWebView(
+                        endpoint: active,
+                        bridge: bridge,
+                        reconnectGeneration: store.connectionEpoch,
+                        statusModel: webViewStatus,
+                        endpointStore: store
+                    )
+                    .id("\(active.url.absoluteString)|\(store.connectionEpoch)")
+                    .ignoresSafeArea()
 
-                if webViewStatus.state == .loading {
-                    loadingOverlay
+                    if webViewStatus.state == .loading {
+                        loadingOverlay
+                    }
+
+                    if case .failed(let message) = webViewStatus.state {
+                        failureOverlay(message: message)
+                    }
+
+                    launcherOverlay
                 }
-
-                if case .failed(let message) = webViewStatus.state {
-                    failureOverlay(message: message)
-                }
-
-                launcherOverlay
             } else {
                 SettingsView(store: store, connectionOnly: true)
             }
@@ -55,6 +62,12 @@ struct RootView: View {
         }
         .sheet(isPresented: $showingShare) {
             shareSheetView
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openSessionInWebView)) { notification in
+            withAnimation {
+                showingSessions = false
+            }
+            // WebView will pick up the new URL when needed
         }
     }
 
