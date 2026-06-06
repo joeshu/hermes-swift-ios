@@ -416,6 +416,50 @@ extension HermesGatewayClient {
         let (data, _) = try await URLSession.shared.data(for: request)
         return try JSONDecoder().decode(SkillContentDTO.self, from: data)
     }
+
+    public func toggleSkill(baseURL: URL, name: String, enabled: Bool) async throws -> Bool {
+        let url = baseURL.appendingPathComponent("/api/skills/toggle")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "name": name,
+            "enabled": enabled
+        ])
+        request.timeoutInterval = 15
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let result = try JSONDecoder().decode(SkillToggleResult.self, from: data)
+        return result.ok ?? false
+    }
+
+    public func deleteSkill(baseURL: URL, name: String) async throws -> Bool {
+        let url = baseURL.appendingPathComponent("/api/skills/delete")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["name": name])
+        request.timeoutInterval = 15
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let result = try JSONDecoder().decode(DeleteResult.self, from: data)
+        return result.ok
+    }
+
+    public func saveSkill(baseURL: URL, name: String, content: String, category: String? = nil) async throws -> Bool {
+        var payload: [String: Any] = ["name": name, "content": content]
+        if let category { payload["category"] = category }
+        let url = baseURL.appendingPathComponent("/api/skills/save")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        request.timeoutInterval = 15
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let result = try? JSONDecoder().decode(DeleteResult.self, from: data)
+        return result?.ok ?? false
+    }
 }
 
 // MARK: - Insights API

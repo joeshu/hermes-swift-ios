@@ -6,7 +6,14 @@ public struct SkillsListView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var selectedSkill: HermesGatewayClient.SkillDTO?
-    @State private var skillContent: String?
+    @State private var showDeleteAlert = false
+    @State private var skillToDelete: HermesGatewayClient.SkillDTO?
+    @State private var showNewSkillSheet = false
+    @State private var showEditor = false
+    @State private var editName = ""
+    @State private var editContent = ""
+    @State private var editCategory = ""
+    @State private var saveStatus: String?
 
     public init() {}
 
@@ -27,6 +34,11 @@ public struct SkillsListView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { showNewSkillSheet = true } label: {
+                        Image(systemName: "plus")
+                    }
+                    .disabled(isLoading)
+
                     Button { Task { await loadSkills() } } label: {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -35,6 +47,94 @@ public struct SkillsListView: View {
             }
         }
         .task { await loadSkills() }
+        .alert("Delete skill?", isPresented: $showDeleteAlert, presenting: skillToDelete) { skill in
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                Task { await deleteSkill(skill.name) }
+            }
+        } message: { skill in
+            Text("Delete \"\(skill.name)\" and all its files? This cannot be undone.")
+        }
+        .sheet(isPresented: $showNewSkillSheet) {
+            skillEditor(title: "New Skill", name: "", content: "", category: "")
+        }
+        .sheet(item: $selectedSkill) { skill in
+            SkillDetailView(store: store, skill: skill, onRefresh: { Task { await loadSkills() } })
+        }
+    }
+
+    private func skillEditor(title: String, name: String, content: String, category: String) -> some View {
+        NavigationStack {
+            Form {
+                if title == "New Skill" {
+                    TextField("Skill name", text: $editName)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                TextField("Category (optional)", text: $editCategory)
+                    .textInputAutocapitalization(.never)
+                Section("Content (SKILL.md)") {
+                    TextEditor(text: $editContent)
+                        .frame(minHeight: 200)
+                }
+                if let saveStatus {
+                    Text(saveStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") {
+                        showNewSkillSheet = false
+                        editName = ""
+                        editContent = ""
+                        editCategory = ""
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save") {
+                        Task { await saveNewSkill() }
+                    }
+                    .disabled(editName.trimmingCharacters(in: .whitespaces).isEmpty || editContent.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .onAppear {
+            editName = name
+            editContent = content
+            editCategory = category
+        }
+    }
+
+    private func saveNewSkill() async {
+        guard let active = store.activeEndpoint else { return }
+        saveStatus = "Saving…"
+
+        do {
+            let category = editCategory.trimmingCharacters(in: .whitespaces).isEmpty ? nil : editCategory.trimmingCharacters(in: .whitespaces)
+            let ok = try await HermesGatewayClient.shared.saveSkill(
+                baseURL: active.url,
+                name: editName.trimmingCharacters(in: .whitespaces),
+                content: editContent,
+                category: category
+            )
+            if ok {
+                showNewSkillSheet = false
+                editName = ""
+                editContent = ""
+                editCategory = ""
+                await loadSkills()
+            } else {
+                saveStatus = "Failed to save"
+            }
+        } catch {
+            saveStatus = "Error: \(error.localizedDescription)"
+        }
+
+        Task { try? await Task.sleep(nanoseconds: 3_000_000_000); saveStatus = nil }
     }
 
     private var loadingView: some View {
@@ -61,6 +161,8 @@ public struct SkillsListView: View {
         VStack(spacing: 12) {
             Image(systemName: "wrench").font(.title2).foregroundStyle(.secondary)
             Text("No skills found").font(.headline)
+            Text("Tap + to create your first skill.").font(.subheadline).foregroundStyle(.secondary)
+            Button("New Skill") { showNewSkillSheet = true }.buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -70,37 +172,45 @@ public struct SkillsListView: View {
             ForEach(groupedCategories.keys.sorted(), id: \.self) { category in
                 Section(category) {
                     ForEach(groupedCategories[category] ?? []) { skill in
-                        Button { selectedSkill = skill } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(skill.name)
-                                        .font(.body)
-                                        .foregroundStyle(.primary)
-                                    if let desc = skill.description {
-                                        Text(desc)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(2)
+                        HStack {
+                            Button { selectedSkill = skill } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(skill.name)
+                                            .font(.body)
+                                            .foregroundStyle(.primary)
+                                        if let desc = skill.description {
+                                            Text(desc)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(2)
+                                        }
                                     }
+                                    Spacer()
                                 }
-                                Spacer()
-                                if let enabled = skill.enabled {
-                                    Image(systemName: enabled ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(enabled ? .green : .secondary)
+                            }
+                            .buttonStyle(.plain)
+
+                            Toggle("", isOn: Binding(
+                                get: { skill.enabled ?? true },
+                                set: { newValue in
+                                    Task { await toggleSkill(skill.name, enabled: newValue) }
                                 }
-                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                            ))
+                            .labelsHidden()
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button("Delete", role: .destructive) {
+                                skillToDelete = skill
+                                showDeleteAlert = true
                             }
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
         }
         .listStyle(.insetGrouped)
         .refreshable { await loadSkills() }
-        .sheet(item: $selectedSkill) { skill in
-            SkillDetailView(store: store, skill: skill)
-        }
     }
 
     private var groupedCategories: [String: [HermesGatewayClient.SkillDTO]] {
@@ -120,19 +230,63 @@ public struct SkillsListView: View {
         }
         isLoading = false
     }
+
+    private func toggleSkill(_ name: String, enabled: Bool) async {
+        guard let active = store.activeEndpoint else { return }
+        _ = try? await HermesGatewayClient.shared.toggleSkill(baseURL: active.url, name: name, enabled: enabled)
+        await loadSkills()
+    }
+
+    private func deleteSkill(_ name: String) async {
+        guard let active = store.activeEndpoint else { return }
+        _ = try? await HermesGatewayClient.shared.deleteSkill(baseURL: active.url, name: name)
+        await loadSkills()
+    }
 }
 
 struct SkillDetailView: View {
     @EnvironmentObject var store: EndpointStore
     let skill: HermesGatewayClient.SkillDTO
+    let onRefresh: (() -> Void)?
     @State private var content: String?
     @State private var isLoading = true
+    @State private var editContent = ""
+    @State private var isEditing = false
+    @State private var saveStatus: String?
 
     var body: some View {
         NavigationStack {
             Group {
                 if isLoading {
                     ProgressView("Loading…")
+                } else if isEditing {
+                    VStack(spacing: 8) {
+                        TextEditor(text: $editContent)
+                            .font(.body)
+                            .frame(minHeight: 300)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.separator, lineWidth: 1))
+                            .padding()
+
+                        HStack(spacing: 12) {
+                            Button("Cancel") {
+                                isEditing = false
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Save") {
+                                Task { await saveContent() }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(saveStatus == "Saving…")
+                        }
+                        .padding(.bottom)
+
+                        if let saveStatus {
+                            Text(saveStatus)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 } else if let content {
                     ScrollView {
                         Text(content)
@@ -147,14 +301,52 @@ struct SkillDetailView: View {
             }
             .navigationTitle(skill.name)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !isEditing {
+                        Button("Edit") {
+                            editContent = content ?? ""
+                            isEditing = true
+                        }
+                    }
+                }
+            }
         }
         .task {
             guard let active = store.activeEndpoint else { return }
             do {
                 let result = try await HermesGatewayClient.shared.fetchSkillContent(baseURL: active.url, name: skill.name)
                 content = result.content ?? result.description
-            } catch { content = "Failed to load content." }
+                editContent = content ?? ""
+            } catch {
+                content = "Failed to load content."
+            }
             isLoading = false
         }
+    }
+
+    private func saveContent() async {
+        guard let active = store.activeEndpoint else { return }
+        saveStatus = "Saving…"
+
+        do {
+            let ok = try await HermesGatewayClient.shared.saveSkill(
+                baseURL: active.url,
+                name: skill.name,
+                content: editContent
+            )
+            if ok {
+                content = editContent
+                isEditing = false
+                saveStatus = nil
+                onRefresh?()
+            } else {
+                saveStatus = "Failed to save"
+            }
+        } catch {
+            saveStatus = "Error: \(error.localizedDescription)"
+        }
+
+        Task { try? await Task.sleep(nanoseconds: 3_000_000_000); saveStatus = nil }
     }
 }

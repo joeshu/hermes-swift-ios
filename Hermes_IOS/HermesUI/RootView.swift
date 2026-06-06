@@ -14,31 +14,31 @@ struct RootView: View {
     @EnvironmentObject var store: EndpointStore
     @State private var showingSettings = false
     @State private var showingShare = false
-    @State private var currentTab: NativeTab = .sessions
+    @State private var currentTab: NativeTab = .chat
+    @State private var openSessionId: String?
     @State private var launcherXRatio: CGFloat = 0.96
     @State private var launcherYRatio: CGFloat = 0.27
     @State private var launcherTouchStart: CFTimeInterval?
     @State private var launcherIsDragging = false
     @State private var bridge = JSBridge()
     @StateObject private var webViewStatus = WebViewStatusModel()
+    @State private var webViewRefreshToken = 0
     private let shareSheet = ShareSheetCapability()
 
     private enum NativeTab: String, CaseIterable {
+        case chat = "Chat"
         case sessions = "Sessions"
         case skills = "Skills"
         case memory = "Memory"
         case insights = "Insights"
-        case profiles = "Profile"
-        case projects = "Projects"
 
         var icon: String {
             switch self {
-            case .sessions: return "message"
+            case .chat: return "bubble.left.and.bubble.right"
+            case .sessions: return "list.bullet"
             case .skills: return "wrench"
             case .memory: return "brain"
             case .insights: return "chart.bar"
-            case .profiles: return "person"
-            case .projects: return "folder"
             }
         }
     }
@@ -60,6 +60,26 @@ struct RootView: View {
 
                     // Content
                     switch currentTab {
+                    case .chat:
+                        ZStack {
+                            HermesWebView(
+                                endpoint: active,
+                                bridge: bridge,
+                                reconnectGeneration: webViewRefreshToken,
+                                statusModel: webViewStatus,
+                                endpointStore: store
+                            )
+                            .id("\(active.url.absoluteString)|\(webViewRefreshToken)")
+                            .ignoresSafeArea()
+
+                            if webViewStatus.state == .loading {
+                                loadingOverlay
+                            }
+
+                            if case .failed(let message) = webViewStatus.state {
+                                failureOverlay(message: message)
+                            }
+                        }
                     case .sessions:
                         SessionsListView()
                             .environmentObject(store)
@@ -72,16 +92,13 @@ struct RootView: View {
                     case .insights:
                         InsightsView()
                             .environmentObject(store)
-                    case .profiles:
-                        ProfilesView()
-                            .environmentObject(store)
-                    case .projects:
-                        ProjectsView()
-                            .environmentObject(store)
                     }
                 }
 
-                launcherOverlay
+                if currentTab != .chat {
+                    // Only show launcher overlay when not in chat mode
+                    launcherOverlay
+                }
             } else {
                 SettingsView(store: store, connectionOnly: true)
             }
@@ -284,6 +301,13 @@ struct RootView: View {
     }
 
     private func openWebViewForSession(notification: Notification) {
-        // WebView 相关方法暂不实现
+        guard let sessionId = notification.userInfo?["sessionId"] as? String else { return }
+        openSessionId = sessionId
+        // Switch to chat tab
+        withAnimation {
+            currentTab = .chat
+        }
+        // Reload WebView to the specific session URL
+        webViewRefreshToken += 1
     }
 }
