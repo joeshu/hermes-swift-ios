@@ -95,7 +95,7 @@ public struct MemoryListView: View {
                                     .frame(minHeight: 300)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 8)
-                                            .stroke(.separator, lineWidth: 1)
+                                            .stroke(Color(.separator), lineWidth: 1)
                                     )
 
                                 HStack(spacing: 12) {

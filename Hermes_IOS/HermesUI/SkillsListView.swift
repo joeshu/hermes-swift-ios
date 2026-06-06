@@ -59,7 +59,7 @@ public struct SkillsListView: View {
             skillEditor(title: "New Skill", name: "", content: "", category: "")
         }
         .sheet(item: $selectedSkill) { skill in
-            SkillDetailView(store: store, skill: skill, onRefresh: { Task { await loadSkills() } })
+            SkillDetailView(store: _store, skill: skill, onRefresh: { Task { await loadSkills() } })
         }
     }
 
@@ -245,7 +245,7 @@ public struct SkillsListView: View {
 }
 
 struct SkillDetailView: View {
-    @EnvironmentObject var store: EndpointStore
+    let store: EndpointStore
     let skill: HermesGatewayClient.SkillDTO
     let onRefresh: (() -> Void)?
     @State private var content: String?
@@ -264,7 +264,7 @@ struct SkillDetailView: View {
                         TextEditor(text: $editContent)
                             .font(.body)
                             .frame(minHeight: 300)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.separator, lineWidth: 1))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.separator), lineWidth: 1))
                             .padding()
 
                         HStack(spacing: 12) {

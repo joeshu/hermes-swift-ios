@@ -53,7 +53,7 @@ struct RootView: View {
                             Label(tab.rawValue, systemImage: tab.icon).tag(tab)
                         }
                     }
-                    .pickerStyle(.palette)
+                    .pickerStyle(.segmented)
                     .padding(.horizontal)
                     .padding(.vertical, 8)
                     .background(.bar)

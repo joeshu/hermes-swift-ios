@@ -16,7 +16,7 @@ public final class NavigationDelegate: NSObject, WKNavigationDelegate, WKUIDeleg
     private let statusModel: WebViewStatusModel?
     private let endpoint: HermesEndpoint
     private let endpointStore: EndpointStore?
-    private var isMainPageLoad = true
+    public var isMainPageLoad = true
 
     public init(
         pinner: FingerprintPinner? = nil,
