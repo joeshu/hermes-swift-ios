@@ -61,6 +61,8 @@ jobs:
           echo "$code" > build/archive-exit-code.txt
           APP_PATH=$(find build/Hermes_IOS.xcarchive -type d -name '*.app' | head -n 1 || true)
           if [ -n "$APP_PATH" ] && [ -d "$APP_PATH" ]; then
+            echo "=== FINAL APP ATS KEYS ==="
+            /usr/libexec/PlistBuddy -c 'Print :NSAppTransportSecurity' "$APP_PATH/Info.plist" 2>/dev/null || echo 'NSAppTransportSecurity missing'
             mkdir -p build/exported-app build/Payload
             cp -R "$APP_PATH" build/exported-app/
             cp -R "$APP_PATH" build/Payload/
