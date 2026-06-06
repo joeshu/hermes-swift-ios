@@ -79,6 +79,15 @@ struct RootView: View {
                             if case .failed(let message) = webViewStatus.state {
                                 failureOverlay(message: message)
                             }
+
+                            // Chat floating menu overlay
+                            VStack {
+                                Spacer()
+                                HStack {
+                                    Spacer()
+                                    chatMenuButton
+                                }
+                            }
                         }
                     case .sessions:
                         SessionsListView()
@@ -309,5 +318,52 @@ struct RootView: View {
         }
         // Reload WebView to the specific session URL
         webViewRefreshToken += 1
+    }
+
+    // MARK: - Chat Floating Menu
+
+    private var chatMenuButton: some View {
+        Menu {
+            Button(action: { webViewRefreshToken += 1 }) {
+                Label("Reload", systemImage: "arrow.clockwise")
+            }
+
+            Button(action: { showingShare = true }) {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+
+            Button(action: { showingSettings = true }) {
+                Label("Connections", systemImage: "antenna.radiowaves.left.and.right")
+            }
+
+            if let url = store.activeEndpoint?.url {
+                Button(action: {
+                    UIPasteboard.general.string = url.absoluteString
+                }) {
+                    Label("Copy URL", systemImage: "doc.on.doc")
+                }
+            }
+
+            if let url = store.activeEndpoint?.url {
+                Button(action: { Task { await openInSafari(url) } }) {
+                    Label("Open in Safari", systemImage: "safari")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.3), radius: 4)
+                .padding(12)
+                .background(.ultraThinMaterial, in: Circle())
+        }
+        .padding(.trailing, 8)
+        .padding(.bottom, 8)
+    }
+
+    private func openInSafari(_ url: URL) async {
+        if UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url, options: [:], completionHandler: nil)
+        }
     }
 }
