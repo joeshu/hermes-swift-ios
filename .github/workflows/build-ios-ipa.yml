@@ -27,10 +27,8 @@ jobs:
           echo "$code" > build/sim-exit-code.txt
           echo "=== SIM EXIT CODE ==="
           cat build/sim-exit-code.txt
-          echo "=== SIM ERROR SUMMARY ==="
-          grep -nE "error:|fatal error:|SwiftCompile|Command .* failed|BUILD FAILED|No such module" build/build-sim.log | tail -n 120 || true
-          echo "=== SIM LOG TAIL ==="
-          tail -n 120 build/build-sim.log || true
+          echo "=== SIM RESULT APP ==="
+          find ~/Library/Developer/Xcode/DerivedData -type d -path '*Build/Products/Release-iphonesimulator/*.app' | head -n 5 || true
           exit 0
 
       - name: Archive app (unsigned)
@@ -49,7 +47,8 @@ jobs:
           echo "$code" > build/archive-exit-code.txt
           APP_PATH=$(find build/Hermes_IOS.xcarchive -type d -name '*.app' | head -n 1 || true)
           if [ -n "$APP_PATH" ] && [ -d "$APP_PATH" ]; then
-            mkdir -p build/Payload
+            mkdir -p build/exported-app build/Payload
+            cp -R "$APP_PATH" build/exported-app/
             cp -R "$APP_PATH" build/Payload/
             (cd build && zip -r Hermes_IOS-unsigned.ipa Payload >/dev/null)
             echo created > build/ipa-status.txt
@@ -60,15 +59,31 @@ jobs:
           cat build/archive-exit-code.txt
           echo "=== IPA STATUS ==="
           cat build/ipa-status.txt
+          echo "=== ARCHIVE EXISTS ==="
+          if [ -d build/Hermes_IOS.xcarchive ]; then echo yes; else echo no; fi
+          echo "=== EXPORTED APP EXISTS ==="
+          if find build/exported-app -type d -name '*.app' | grep -q .; then echo yes; else echo no; fi
+          echo "=== IPA EXISTS ==="
+          if [ -f build/Hermes_IOS-unsigned.ipa ]; then echo yes; else echo no; fi
+          echo "=== FILE SIZES ==="
+          [ -d build/Hermes_IOS.xcarchive ] && du -sh build/Hermes_IOS.xcarchive || true
+          [ -d build/exported-app ] && du -sh build/exported-app || true
+          [ -f build/Hermes_IOS-unsigned.ipa ] && ls -lh build/Hermes_IOS-unsigned.ipa || true
           echo "=== ARCHIVE ERROR SUMMARY ==="
           grep -nE "error:|fatal error:|SwiftCompile|Command .* failed|BUILD FAILED|No such module|provision|sign" build/archive.log | tail -n 120 || true
           echo "=== ARCHIVE LOG TAIL ==="
           tail -n 120 build/archive.log || true
           exit 0
 
-      - name: Upload artifacts
+      - name: Upload raw outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-build-artifacts
-          path: build/
+          name: ios-unsigned-outputs
+          path: |
+            build/Hermes_IOS.xcarchive
+            build/exported-app
+            build/Hermes_IOS-unsigned.ipa
+            build/*.txt
+            build/*.log
+          if-no-files-found: warn
