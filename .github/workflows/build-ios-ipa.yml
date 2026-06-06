@@ -1,16 +1,18 @@
-name: Build iOS IPA
-run-name: Build iOS IPA
+name: Build iOS unsigned outputs
+run-name: Build iOS unsigned outputs
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-unsigned-ios:
     runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Build simulator
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build simulator app
         shell: bash
         run: |
           set +e
@@ -29,9 +31,13 @@ jobs:
           cat build/sim-exit-code.txt
           echo "=== SIM RESULT APP ==="
           find ~/Library/Developer/Xcode/DerivedData -type d -path '*Build/Products/Release-iphonesimulator/*.app' | head -n 5 || true
+          echo "=== SIM ERROR SUMMARY ==="
+          grep -nE "error:|fatal error:|SwiftCompile|Command .* failed|BUILD FAILED|No such module" build/build-sim.log | tail -n 120 || true
+          echo "=== SIM LOG TAIL ==="
+          tail -n 120 build/build-sim.log || true
           exit 0
 
-      - name: Archive app (unsigned)
+      - name: Archive device app (unsigned)
         shell: bash
         run: |
           set +e
@@ -75,7 +81,7 @@ jobs:
           tail -n 120 build/archive.log || true
           exit 0
 
-      - name: Upload raw outputs
+      - name: Upload unsigned outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
