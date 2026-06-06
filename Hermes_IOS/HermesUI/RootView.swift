@@ -13,12 +13,14 @@ struct RootView: View {
 
     @EnvironmentObject var store: EndpointStore
     @State private var showingSettings = false
+    @State private var showingShare = false
     @State private var launcherXRatio: CGFloat = 0.96
     @State private var launcherYRatio: CGFloat = 0.27
     @State private var launcherTouchStart: CFTimeInterval?
     @State private var launcherIsDragging = false
     @State private var bridge = JSBridge()
     @StateObject private var webViewStatus = WebViewStatusModel()
+    private let shareSheet = ShareSheetCapability()
 
     var body: some View {
         ZStack {
@@ -51,6 +53,58 @@ struct RootView: View {
                 showingSettings = false
             }
         }
+        .sheet(isPresented: $showingShare) {
+            shareSheetView
+        }
+    }
+
+    private var shareSheetView: some View {
+        VStack(spacing: 16) {
+            Text("Share")
+                .font(.headline)
+                .padding(.top, 20)
+
+            if let active = store.activeEndpoint {
+                Button {
+                    dismissShare()
+                    Task { try? await shareSheet.invoke(method: "present", params: [
+                        "text": .string("Check out Hermes"),
+                        "url": .string(active.url.absoluteString)
+                    ]) }
+                } label: {
+                    Label("Share this page", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Button {
+                UIPasteboard.general.string = store.activeEndpoint?.url.absoluteString ?? ""
+                dismissShare()
+            } label: {
+                Label("Copy URL", systemImage: "doc.on.doc")
+            }
+            .buttonStyle(.bordered)
+
+            if let active = store.activeEndpoint, let host = active.url.host {
+                Button {
+                    UIPasteboard.general.string = host
+                    dismissShare()
+                } label: {
+                    Label("Copy server address", systemImage: "link")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Spacer()
+
+            Button("Cancel") { dismissShare() }
+                .padding(.bottom, 20)
+        }
+        .frame(maxWidth: 320)
+    }
+
+    private func dismissShare() {
+        showingShare = false
     }
 
     private var loadingOverlay: some View {
