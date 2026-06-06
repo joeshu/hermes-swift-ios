@@ -60,9 +60,10 @@ targets:
           UIColorName: ""
         # Permission strings — only what real flows actually exercise.
         NSCameraUsageDescription: "This app uses the camera to scan a QR code for webui connection setup."
-        # ATS: allow non-HTTPS in WebView content for LAN dev (Tailscale magic-DNS hostnames are HTTPS).
-        # Native networking is unaffected.
+        # ATS: allow non-HTTPS in both WebView content and native URLSession requests
+        # for Tailscale / LAN / local HTTP deployments during development.
         NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
           NSAllowsArbitraryLoadsInWebContent: true
         # Custom URL scheme for endpoint-share fallback (hermes://agent?payload=<base64>).
         CFBundleURLTypes:
