@@ -63,7 +63,7 @@ public struct SessionsListView: View {
         .navigationTitle("Sessions")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search sessions…")
-        .onChange(of: searchText) { _, newValue in
+        .onChange(of: searchText) { newValue in
             if newValue.isEmpty { isSearching = false }
             else { isSearching = true; Task { await performSearch() } }
         }
