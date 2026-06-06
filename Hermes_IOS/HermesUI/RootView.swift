@@ -25,12 +25,20 @@ struct RootView: View {
 
     private enum NativeTab: String, CaseIterable {
         case sessions = "Sessions"
+        case skills = "Skills"
         case memory = "Memory"
+        case insights = "Insights"
+        case profiles = "Profile"
+        case projects = "Projects"
 
         var icon: String {
             switch self {
             case .sessions: return "message"
+            case .skills: return "wrench"
             case .memory: return "brain"
+            case .insights: return "chart.bar"
+            case .profiles: return "person"
+            case .projects: return "folder"
             }
         }
     }
@@ -38,10 +46,6 @@ struct RootView: View {
     var body: some View {
         ZStack {
             if let active = store.activeEndpoint {
-                if case .failed(let message) = webViewStatus.state {
-                    // Show webview behind overlay, but we're in native mode
-                }
-
                 VStack(spacing: 0) {
                     // Tab bar
                     Picker("View", selection: $currentTab) {
@@ -49,7 +53,7 @@ struct RootView: View {
                             Label(tab.rawValue, systemImage: tab.icon).tag(tab)
                         }
                     }
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.palette)
                     .padding(.horizontal)
                     .padding(.vertical, 8)
                     .background(.bar)
@@ -59,11 +63,21 @@ struct RootView: View {
                     case .sessions:
                         SessionsListView()
                             .environmentObject(store)
-                            .transition(.opacity)
+                    case .skills:
+                        SkillsListView()
+                            .environmentObject(store)
                     case .memory:
                         MemoryListView()
                             .environmentObject(store)
-                            .transition(.opacity)
+                    case .insights:
+                        InsightsView()
+                            .environmentObject(store)
+                    case .profiles:
+                        ProfilesView()
+                            .environmentObject(store)
+                    case .projects:
+                        ProjectsView()
+                            .environmentObject(store)
                     }
                 }
 

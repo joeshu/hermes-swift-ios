@@ -260,4 +260,202 @@ extension HermesGatewayClient {
         public let ok: Bool
         public let section: String?
     }
+
+    // MARK: - Skills DTOs
+
+    public struct SkillsDTO: Decodable, Sendable {
+        public let skills: [SkillDTO]
+    }
+
+    public struct SkillDTO: Decodable, Sendable, Identifiable {
+        public var id: String { name }
+        public let name: String
+        public let description: String?
+        public let category: String?
+        public let enabled: Bool?
+    }
+
+    public struct SkillContentDTO: Decodable, Sendable {
+        public let name: String?
+        public let description: String?
+        public let content: String?
+        public let linkedFiles: [String: String]?
+
+        enum CodingKeys: String, CodingKey {
+            case name, description, content
+            case linkedFiles = "linked_files"
+        }
+    }
+
+    public struct SkillToggleResult: Decodable, Sendable {
+        public let ok: Bool?
+        public let enabled: Bool?
+    }
+
+    // MARK: - Insights DTOs
+
+    public struct InsightsDTO: Decodable, Sendable {
+        public let totalSessions: Int
+        public let totalMessages: Int
+        public let totalInputTokens: Int
+        public let totalOutputTokens: Int
+        public let totalTokens: Int
+        public let totalCost: Double
+        public let models: [String: ModelStatsDTO]?
+        public let dailyTokens: [String: DailyTokenDTO]?
+
+        enum CodingKeys: String, CodingKey {
+            case totalSessions = "total_sessions"
+            case totalMessages = "total_messages"
+            case totalInputTokens = "total_input_tokens"
+            case totalOutputTokens = "total_output_tokens"
+            case totalTokens = "total_tokens"
+            case totalCost = "total_cost"
+            case models, dailyTokens = "daily_tokens"
+        }
+    }
+
+    public struct ModelStatsDTO: Decodable, Sendable {
+        public let sessions: Int?
+        public let messages: Int?
+        public let inputTokens: Int?
+        public let outputTokens: Int?
+        public let cost: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case sessions, messages, cost
+            case inputTokens = "input_tokens"
+            case outputTokens = "output_tokens"
+        }
+    }
+
+    public struct DailyTokenDTO: Decodable, Sendable {
+        public let input: Int?
+        public let output: Int?
+        public let total: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case input, output, total
+        }
+    }
+
+    // MARK: - Profile DTOs
+
+    public struct ProfilesDTO: Decodable, Sendable {
+        public let profiles: [ProfileDTO]
+        public let active: String?
+    }
+
+    public struct ProfileDTO: Decodable, Sendable, Identifiable {
+        public var id: String { name }
+        public let name: String
+        public let path: String?
+        public let isDefault: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case name, path
+            case isDefault = "is_default"
+        }
+    }
+
+    public struct ActiveProfileDTO: Decodable, Sendable {
+        public let name: String
+        public let path: String
+        public let isDefault: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case name, path
+            case isDefault = "is_default"
+        }
+    }
+
+    // MARK: - Projects DTOs
+
+    public struct ProjectsDTO: Decodable, Sendable {
+        public let projects: [ProjectDTO]
+        public let activeProfile: String?
+
+        enum CodingKeys: String, CodingKey {
+            case projects
+            case activeProfile = "active_profile"
+        }
+    }
+
+    public struct ProjectDTO: Decodable, Sendable, Identifiable {
+        public var id: String { name }
+        public let name: String
+        public let path: String?
+        public let description: String?
+        public let profile: String?
+    }
+}
+
+// MARK: - Skills API
+
+extension HermesGatewayClient {
+    public func fetchSkills(baseURL: URL) async throws -> [SkillDTO] {
+        let url = baseURL.appendingPathComponent("/api/skills")
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 15
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let result = try JSONDecoder().decode(SkillsDTO.self, from: data)
+        return result.skills
+    }
+
+    public func fetchSkillContent(baseURL: URL, name: String) async throws -> SkillContentDTO {
+        guard let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            throw URLError(.badURL)
+        }
+        let url = baseURL.appendingPathComponent("/api/skills/content?name=\(encoded)")
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 15
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try JSONDecoder().decode(SkillContentDTO.self, from: data)
+    }
+}
+
+// MARK: - Insights API
+
+extension HermesGatewayClient {
+    public func fetchInsights(baseURL: URL, days: Int = 30) async throws -> InsightsDTO {
+        let url = baseURL.appendingPathComponent("/api/insights?days=\(days)")
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 15
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try JSONDecoder().decode(InsightsDTO.self, from: data)
+    }
+}
+
+// MARK: - Profiles API
+
+extension HermesGatewayClient {
+    public func fetchProfiles(baseURL: URL) async throws -> ProfilesDTO {
+        let url = baseURL.appendingPathComponent("/api/profiles")
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 15
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try JSONDecoder().decode(ProfilesDTO.self, from: data)
+    }
+}
+
+// MARK: - Projects API
+
+extension HermesGatewayClient {
+    public func fetchProjects(baseURL: URL) async throws -> ProjectsDTO {
+        let url = baseURL.appendingPathComponent("/api/projects")
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 15
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try JSONDecoder().decode(ProjectsDTO.self, from: data)
+    }
 }
