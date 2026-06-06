@@ -4,6 +4,33 @@ import Foundation
 public actor HermesGatewayClient {
     public static let shared = HermesGatewayClient()
 
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 30
+        return URLSession(configuration: config)
+    }()
+
+    public enum GatewayClientError: LocalizedError {
+        case invalidBaseURL(String)
+        case httpStatus(Int, String)
+        case network(String)
+        case decode(String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .invalidBaseURL(let text):
+                return "Invalid server URL: \(text)"
+            case .httpStatus(let code, let url):
+                return "Request failed with HTTP \(code) for \(url)"
+            case .network(let text):
+                return text
+            case .decode(let text):
+                return text
+            }
+        }
+    }
+
     // MARK: - DTOs
 
     public struct SessionDTO: Decodable, Identifiable, Sendable {
@@ -40,16 +67,6 @@ public actor HermesGatewayClient {
     public struct CleanupResult: Decodable, Sendable {
         public let ok: Bool
         public let cleaned: Int?
-    }
-
-    public struct ChatStartRequest: Encodable, Sendable {
-        public let sessionId: String
-        public let message: String
-
-        enum CodingKeys: String, CodingKey {
-            case sessionId = "session_id"
-            case message
-        }
     }
 
     public struct ChatStartResponse: Decodable, Sendable {
@@ -113,125 +130,9 @@ public actor HermesGatewayClient {
 
     public struct CreatedSessionDTO: Decodable, Sendable {
         public let sessionId: String?
-
-        enum CodingKeys: String, CodingKey {
-            case sessionId = "session_id"
-        }
+        enum CodingKeys: String, CodingKey { case sessionId = "session_id" }
     }
 
-    // MARK: - API Methods
-
-    public func fetchSessions(baseURL: URL) async throws -> [SessionDTO] {
-        let url = baseURL.appendingPathComponent("/api/sessions")
-        var request = URLRequest(url: url)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 15
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
-
-        let decoded = try JSONDecoder().decode(SessionResponse.self, from: data)
-        return decoded.sessions
-    }
-
-    public func searchSessions(baseURL: URL, query: String, contentSearch: Bool = true) async throws -> [SessionSearchResult] {
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            return []
-        }
-        let url = baseURL.appendingPathComponent("/api/sessions/search?q=\(encoded)&content=\(contentSearch ? "1" : "0")")
-        var request = URLRequest(url: url)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 15
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let decoded = try JSONDecoder().decode(SearchResponse.self, from: data)
-        return decoded.sessions
-    }
-
-    public func deleteSession(baseURL: URL, sessionId: String) async throws -> Bool {
-        let url = baseURL.appendingPathComponent("/api/session/\(sessionId)")
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        request.timeoutInterval = 15
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw URLError(.badServerResponse)
-        }
-
-        if httpResponse.statusCode == 200 || httpResponse.statusCode == 204 {
-            return true
-        }
-
-        let result = try? JSONDecoder().decode(DeleteResult.self, from: data)
-        return result?.ok ?? false
-    }
-
-    public func cleanupEmptySessions(baseURL: URL, zeroOnly: Bool = false) async throws -> CleanupResult {
-        let path = zeroOnly ? "/api/sessions/cleanup_zero_message" : "/api/sessions/cleanup"
-        let url = baseURL.appendingPathComponent(path)
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [:])
-        request.timeoutInterval = 15
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-        return try JSONDecoder().decode(CleanupResult.self, from: data)
-    }
-
-    public func createSession(baseURL: URL) async throws -> String? {
-        let url = baseURL.appendingPathComponent("/api/session")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["title": "New Session"])
-        request.timeoutInterval = 15
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let response = try? JSONDecoder().decode(CreateSessionResponse.self, from: data)
-        return response?.session?.sessionId
-    }
-
-    // MARK: - Memory API
-
-    public func fetchMemory(baseURL: URL) async throws -> MemoryDTO {
-        let url = baseURL.appendingPathComponent("/api/memory")
-        var request = URLRequest(url: url)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 15
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
-        return try JSONDecoder().decode(MemoryDTO.self, from: data)
-    }
-
-    public func writeMemory(baseURL: URL, section: String, content: String) async throws -> Bool {
-        let url = baseURL.appendingPathComponent("/api/memory/write")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "section": section,
-            "content": content
-        ])
-        request.timeoutInterval = 15
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let result = try JSONDecoder().decode(MemoryWriteResult.self, from: data)
-        return result.ok
-    }
-}
-
-// MARK: - Memory DTOs
-
-extension HermesGatewayClient {
     public struct MemoryDTO: Decodable, Sendable {
         public let memory: String
         public let user: String
@@ -261,11 +162,7 @@ extension HermesGatewayClient {
         public let section: String?
     }
 
-    // MARK: - Skills DTOs
-
-    public struct SkillsDTO: Decodable, Sendable {
-        public let skills: [SkillDTO]
-    }
+    public struct SkillsDTO: Decodable, Sendable { public let skills: [SkillDTO] }
 
     public struct SkillDTO: Decodable, Sendable, Identifiable {
         public var id: String { name }
@@ -291,8 +188,6 @@ extension HermesGatewayClient {
         public let ok: Bool?
         public let enabled: Bool?
     }
-
-    // MARK: - Insights DTOs
 
     public struct InsightsDTO: Decodable, Sendable {
         public let totalSessions: Int
@@ -333,13 +228,7 @@ extension HermesGatewayClient {
         public let input: Int?
         public let output: Int?
         public let total: Int?
-
-        enum CodingKeys: String, CodingKey {
-            case input, output, total
-        }
     }
-
-    // MARK: - Profile DTOs
 
     public struct ProfilesDTO: Decodable, Sendable {
         public let profiles: [ProfileDTO]
@@ -358,19 +247,6 @@ extension HermesGatewayClient {
         }
     }
 
-    public struct ActiveProfileDTO: Decodable, Sendable {
-        public let name: String
-        public let path: String
-        public let isDefault: Bool?
-
-        enum CodingKeys: String, CodingKey {
-            case name, path
-            case isDefault = "is_default"
-        }
-    }
-
-    // MARK: - Projects DTOs
-
     public struct ProjectsDTO: Decodable, Sendable {
         public let projects: [ProjectDTO]
         public let activeProfile: String?
@@ -388,118 +264,184 @@ extension HermesGatewayClient {
         public let description: String?
         public let profile: String?
     }
-}
 
-// MARK: - Skills API
+    // MARK: - URL helpers
 
-extension HermesGatewayClient {
-    public func fetchSkills(baseURL: URL) async throws -> [SkillDTO] {
-        let url = baseURL.appendingPathComponent("/api/skills")
+    private func apiURL(from baseURL: URL, path: String, queryItems: [URLQueryItem] = []) throws -> URL {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            throw GatewayClientError.invalidBaseURL(baseURL.absoluteString)
+        }
+        components.path = path
+        components.queryItems = queryItems.isEmpty ? nil : queryItems
+        guard let url = components.url else {
+            throw GatewayClientError.invalidBaseURL(baseURL.absoluteString)
+        }
+        return url
+    }
+
+    private func run(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw GatewayClientError.network("Non-HTTP response for \(request.url?.absoluteString ?? "unknown URL")")
+            }
+            guard (200...299).contains(http.statusCode) else {
+                throw GatewayClientError.httpStatus(http.statusCode, request.url?.absoluteString ?? "unknown URL")
+            }
+            return (data, http)
+        } catch let error as GatewayClientError {
+            throw error
+        } catch {
+            let ns = error as NSError
+            let url = request.url?.absoluteString ?? "unknown URL"
+            throw GatewayClientError.network("\(ns.domain) \(ns.code) while loading \(url): \(ns.localizedDescription)")
+        }
+    }
+
+    // MARK: - API Methods
+
+    public func fetchSessions(baseURL: URL) async throws -> [SessionDTO] {
+        let url = try apiURL(from: baseURL, path: "/api/sessions")
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 15
+        let (data, _) = try await run(request)
+        return try JSONDecoder().decode(SessionResponse.self, from: data).sessions
+    }
 
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let result = try JSONDecoder().decode(SkillsDTO.self, from: data)
-        return result.skills
+    public func searchSessions(baseURL: URL, query: String, contentSearch: Bool = true) async throws -> [SessionSearchResult] {
+        let url = try apiURL(
+            from: baseURL,
+            path: "/api/sessions/search",
+            queryItems: [
+                URLQueryItem(name: "q", value: query),
+                URLQueryItem(name: "content", value: contentSearch ? "1" : "0")
+            ]
+        )
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, _) = try await run(request)
+        return try JSONDecoder().decode(SearchResponse.self, from: data).sessions
+    }
+
+    public func deleteSession(baseURL: URL, sessionId: String) async throws -> Bool {
+        let url = try apiURL(from: baseURL, path: "/api/session/\(sessionId)")
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        let (data, _) = try await run(request)
+        return (try? JSONDecoder().decode(DeleteResult.self, from: data).ok) ?? true
+    }
+
+    public func cleanupEmptySessions(baseURL: URL, zeroOnly: Bool = false) async throws -> CleanupResult {
+        let path = zeroOnly ? "/api/sessions/cleanup_zero_message" : "/api/sessions/cleanup"
+        let url = try apiURL(from: baseURL, path: path)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [:])
+        let (data, _) = try await run(request)
+        return try JSONDecoder().decode(CleanupResult.self, from: data)
+    }
+
+    public func createSession(baseURL: URL) async throws -> String? {
+        let url = try apiURL(from: baseURL, path: "/api/session")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["title": "New Session"])
+        let (data, _) = try await run(request)
+        return try JSONDecoder().decode(CreateSessionResponse.self, from: data).session?.sessionId
+    }
+
+    public func fetchMemory(baseURL: URL) async throws -> MemoryDTO {
+        let url = try apiURL(from: baseURL, path: "/api/memory")
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, _) = try await run(request)
+        return try JSONDecoder().decode(MemoryDTO.self, from: data)
+    }
+
+    public func writeMemory(baseURL: URL, section: String, content: String) async throws -> Bool {
+        let url = try apiURL(from: baseURL, path: "/api/memory/write")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["section": section, "content": content])
+        let (data, _) = try await run(request)
+        return try JSONDecoder().decode(MemoryWriteResult.self, from: data).ok
+    }
+
+    public func fetchSkills(baseURL: URL) async throws -> [SkillDTO] {
+        let url = try apiURL(from: baseURL, path: "/api/skills")
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, _) = try await run(request)
+        return try JSONDecoder().decode(SkillsDTO.self, from: data).skills
     }
 
     public func fetchSkillContent(baseURL: URL, name: String) async throws -> SkillContentDTO {
-        guard let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            throw URLError(.badURL)
-        }
-        let url = baseURL.appendingPathComponent("/api/skills/content?name=\(encoded)")
+        let url = try apiURL(from: baseURL, path: "/api/skills/content", queryItems: [URLQueryItem(name: "name", value: name)])
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 15
-
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, _) = try await run(request)
         return try JSONDecoder().decode(SkillContentDTO.self, from: data)
     }
 
     public func toggleSkill(baseURL: URL, name: String, enabled: Bool) async throws -> Bool {
-        let url = baseURL.appendingPathComponent("/api/skills/toggle")
+        let url = try apiURL(from: baseURL, path: "/api/skills/toggle")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "name": name,
-            "enabled": enabled
-        ])
-        request.timeoutInterval = 15
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let result = try JSONDecoder().decode(SkillToggleResult.self, from: data)
-        return result.ok ?? false
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["name": name, "enabled": enabled])
+        let (data, _) = try await run(request)
+        return try JSONDecoder().decode(SkillToggleResult.self, from: data).ok ?? false
     }
 
     public func deleteSkill(baseURL: URL, name: String) async throws -> Bool {
-        let url = baseURL.appendingPathComponent("/api/skills/delete")
+        let url = try apiURL(from: baseURL, path: "/api/skills/delete")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["name": name])
-        request.timeoutInterval = 15
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let result = try JSONDecoder().decode(DeleteResult.self, from: data)
-        return result.ok
+        let (data, _) = try await run(request)
+        return try JSONDecoder().decode(DeleteResult.self, from: data).ok
     }
 
     public func saveSkill(baseURL: URL, name: String, content: String, category: String? = nil) async throws -> Bool {
+        let url = try apiURL(from: baseURL, path: "/api/skills/save")
         var payload: [String: Any] = ["name": name, "content": content]
         if let category { payload["category"] = category }
-        let url = baseURL.appendingPathComponent("/api/skills/save")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        request.timeoutInterval = 15
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let result = try? JSONDecoder().decode(DeleteResult.self, from: data)
-        return result?.ok ?? false
+        let (data, _) = try await run(request)
+        if let result = try? JSONDecoder().decode(DeleteResult.self, from: data) {
+            return result.ok
+        }
+        return true
     }
-}
 
-// MARK: - Insights API
-
-extension HermesGatewayClient {
     public func fetchInsights(baseURL: URL, days: Int = 30) async throws -> InsightsDTO {
-        let url = baseURL.appendingPathComponent("/api/insights?days=\(days)")
+        let url = try apiURL(from: baseURL, path: "/api/insights", queryItems: [URLQueryItem(name: "days", value: String(days))])
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 15
-
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, _) = try await run(request)
         return try JSONDecoder().decode(InsightsDTO.self, from: data)
     }
-}
 
-// MARK: - Profiles API
-
-extension HermesGatewayClient {
     public func fetchProfiles(baseURL: URL) async throws -> ProfilesDTO {
-        let url = baseURL.appendingPathComponent("/api/profiles")
+        let url = try apiURL(from: baseURL, path: "/api/profiles")
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 15
-
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, _) = try await run(request)
         return try JSONDecoder().decode(ProfilesDTO.self, from: data)
     }
-}
 
-// MARK: - Projects API
-
-extension HermesGatewayClient {
     public func fetchProjects(baseURL: URL) async throws -> ProjectsDTO {
-        let url = baseURL.appendingPathComponent("/api/projects")
+        let url = try apiURL(from: baseURL, path: "/api/projects")
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 15
-
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, _) = try await run(request)
         return try JSONDecoder().decode(ProjectsDTO.self, from: data)
     }
 }
