@@ -5,8 +5,12 @@ on:
   push:
     branches: [ main, master ]
 
+permissions:
+  contents: read
+
 jobs:
   build-ios:
+    name: Build iOS simulator app
     runs-on: macos-15
 
     steps:
@@ -20,13 +24,17 @@ jobs:
         run: xcodebuild -version
 
       - name: Show available schemes and SDKs
+        shell: bash
         run: |
+          set -euo pipefail
           xcodebuild -list -project Hermes_IOS.xcodeproj | tee build-schemes.log
           xcodebuild -showsdks | tee build-sdks.log
           xcrun simctl list devices available | tee sim-devices.log
 
       - name: Detect scheme
+        shell: bash
         run: |
+          set -euo pipefail
           python3 - <<'PY' > detected-scheme.txt
 import subprocess
 text = subprocess.check_output(['xcodebuild','-list','-project','Hermes_IOS.xcodeproj'], text=True)
@@ -43,16 +51,20 @@ for line in lines:
         schemes.append(line.strip())
 print(schemes[0] if schemes else 'Hermes_IOS')
 PY
-          echo "SCHEME=$(cat detected-scheme.txt)" >> $GITHUB_ENV
+          echo "SCHEME=$(cat detected-scheme.txt)" >> "$GITHUB_ENV"
           echo "Detected scheme: $(cat detected-scheme.txt)"
 
       - name: Resolve Swift packages
-        run: xcodebuild -resolvePackageDependencies -project Hermes_IOS.xcodeproj | tee resolve-packages.log
-
-      - name: Build app (simulator, keep going for logs)
+        shell: bash
         run: |
-          mkdir -p build
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies -project Hermes_IOS.xcodeproj | tee resolve-packages.log
+
+      - name: Build app and retain logs
+        shell: bash
+        run: |
           set +e
+          mkdir -p build
           xcodebuild \
             -project Hermes_IOS.xcodeproj \
             -scheme "$SCHEME" \
@@ -63,7 +75,7 @@ PY
             CODE_SIGNING_ALLOWED=NO \
             build > build/xcodebuild-simulator.log 2>&1
           echo $? > build/simulator-exit-code.txt
-          tail -n 200 build/xcodebuild-simulator.log | tee build/xcodebuild-simulator-tail.log
+          tail -n 200 build/xcodebuild-simulator.log | tee build/xcodebuild-simulator-tail.log || true
           grep -nE "error:|fatal error:|SwiftCompile|Command .* failed|BUILD FAILED|No such module|provision|sign" build/xcodebuild-simulator.log | tail -n 120 | tee build/error-summary.log || true
           exit 0
 
@@ -81,8 +93,10 @@ PY
             detected-scheme.txt
           if-no-files-found: warn
 
-      - name: Fail if simulator build failed
+      - name: Mark build failed if xcodebuild failed
+        shell: bash
         run: |
+          set -euo pipefail
           code=$(cat build/simulator-exit-code.txt)
           echo "Simulator build exit code: $code"
           test "$code" = "0"
