@@ -2,6 +2,10 @@ name: Build iOS unsigned outputs
 run-name: Build iOS unsigned outputs
 
 on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -11,6 +15,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
 
       - name: Build simulator app
         shell: bash
@@ -29,8 +36,6 @@ jobs:
           echo "$code" > build/sim-exit-code.txt
           echo "=== SIM EXIT CODE ==="
           cat build/sim-exit-code.txt
-          echo "=== SIM RESULT APP ==="
-          find ~/Library/Developer/Xcode/DerivedData -type d -path '*Build/Products/Release-iphonesimulator/*.app' | head -n 5 || true
           echo "=== SIM ERROR SUMMARY ==="
           grep -nE "error:|fatal error:|SwiftCompile|Command .* failed|BUILD FAILED|No such module" build/build-sim.log | tail -n 120 || true
           echo "=== SIM LOG TAIL ==="
