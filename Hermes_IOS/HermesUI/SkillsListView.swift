@@ -62,19 +62,6 @@ public struct SkillsListView: View {
         }
     }
 
-    @ViewBuilder
-    private var mainContent: some View {
-        if isLoading {
-            loadingView
-        } else if let errorMessage {
-            errorView(message: errorMessage)
-        } else if skills.isEmpty {
-            emptyView
-        } else {
-            listView
-        }
-    }
-
     private func skillEditor(title: String, name: String, content: String, category: String) -> some View {
         NavigationStack {
             Form {
