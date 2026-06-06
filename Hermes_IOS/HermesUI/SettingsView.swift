@@ -15,6 +15,7 @@ public struct SettingsView: View {
     @State private var manualWorking = false
     @State private var showingScanner = false
     @State private var preflightStatus: String?
+    @State private var cleanupStatus: String?
     private let connectionOnly: Bool
     private let onConnected: (() -> Void)?
     @Environment(\.openURL) private var openURL
@@ -170,6 +171,26 @@ public struct SettingsView: View {
                     }
                 }
 
+                if !connectionOnly, let active = store.activeEndpoint {
+                    Section("Server Actions") {
+                        Button(action: { Task { await performCleanup() } }) {
+                            HStack {
+                                Image(systemName: "trash")
+                                    .foregroundStyle(.red)
+                                Text("Remove empty sessions")
+                                    .foregroundStyle(.primary)
+                            }
+                        }
+                        .disabled(cleanupStatus == "cleaning")
+
+                        if let cleanupStatus {
+                            Text(cleanupStatus)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 if !connectionOnly {
                     Section("Notifications") {
                         Toggle("In-app notifications", isOn: $settings.inAppNotificationsEnabled)
@@ -209,6 +230,23 @@ public struct SettingsView: View {
                 )
             }
         }
+    }
+
+    private func performCleanup() async {
+        guard let active = store.activeEndpoint else { return }
+        cleanupStatus = "cleaning"
+        do {
+            let result = try await HermesGatewayClient.shared.cleanupEmptySessions(baseURL: active.url, zeroOnly: false)
+            if let cleaned = result.cleaned, cleaned > 0 {
+                cleanupStatus = "Removed \(cleaned) empty session(s)."
+            } else {
+                cleanupStatus = "No empty sessions to remove."
+            }
+        } catch {
+            cleanupStatus = "Failed: \(error.localizedDescription)"
+        }
+        // Auto-clear status after 3 seconds
+        Task { try? await Task.sleep(nanoseconds: 3_000_000_000); cleanupStatus = nil }
     }
 
     private func acceptScanned(_ raw: String) async {
