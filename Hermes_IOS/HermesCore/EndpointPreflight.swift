@@ -113,7 +113,7 @@ public enum EndpointPreflight {
             case .ENETUNREACH:
                 return .notReachable("Network is unreachable. Check Wi‑Fi/cellular and Tailscale.")
             default:
-                return .notReachable(code.localizedDescription)
+                return .notReachable("POSIX error code \(code.rawValue)")
             }
         default:
             return .notReachable(error.localizedDescription)

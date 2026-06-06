@@ -3,6 +3,7 @@ import AVFoundation
 import Foundation
 import UIKit
 import UserNotifications
+import os
 
 public struct SettingsView: View {
     @EnvironmentObject var settings: AppSettings
