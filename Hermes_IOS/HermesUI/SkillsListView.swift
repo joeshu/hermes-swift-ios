@@ -5,6 +5,7 @@ public struct SkillsListView: View {
     @State private var skills: [HermesGatewayClient.SkillDTO] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var debugInfo: HermesGatewayClient.RequestDebug?
     @State private var selectedSkill: HermesGatewayClient.SkillDTO?
     @State private var showDeleteAlert = false
     @State private var skillToDelete: HermesGatewayClient.SkillDTO?
@@ -130,14 +131,54 @@ public struct SkillsListView: View {
     }
 
     private func errorView(message: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle").font(.title2).foregroundStyle(.orange)
-            Text("Couldn't load skills").font(.headline)
-            Text(message).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            Button("Retry") { Task { await loadSkills() } }.buttonStyle(.borderedProminent)
+        ScrollView {
+            VStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle").font(.title2).foregroundStyle(.orange)
+                Text("Couldn't load skills").font(.headline)
+                Text(message).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+
+                if let debugInfo {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Request debug")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text("Method: \(debugInfo.method)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text("URL: \(debugInfo.url)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if let note = debugInfo.note {
+                            Text("Note: \(note)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if let domain = debugInfo.errorDomain, let code = debugInfo.errorCode {
+                            Text("Error: \(domain) \(code)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if let desc = debugInfo.errorDescription {
+                            Text(desc)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .padding(12)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+                }
+
+                Button("Retry") { Task { await loadSkills() } }.buttonStyle(.borderedProminent)
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity)
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var emptyView: some View {
@@ -203,13 +244,18 @@ public struct SkillsListView: View {
     private func loadSkills() async {
         guard let active = store.activeEndpoint else {
             errorMessage = "No server configured."
-            isLoading = false; return
+            debugInfo = nil
+            isLoading = false
+            return
         }
-        isLoading = true; errorMessage = nil
+        isLoading = true
+        errorMessage = nil
+        debugInfo = nil
         do {
             skills = try await HermesGatewayClient.shared.fetchSkills(baseURL: active.url)
         } catch {
             errorMessage = error.localizedDescription
+            debugInfo = await HermesGatewayClient.shared.consumeLastDebug()
         }
         isLoading = false
     }

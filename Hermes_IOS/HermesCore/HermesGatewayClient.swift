@@ -4,6 +4,23 @@ import Foundation
 public actor HermesGatewayClient {
     public static let shared = HermesGatewayClient()
 
+    public struct RequestDebug: Sendable {
+        public let method: String
+        public let url: String
+        public let note: String?
+        public let errorDomain: String?
+        public let errorCode: Int?
+        public let errorDescription: String?
+    }
+
+    private(set) var lastDebug: RequestDebug?
+
+    public func consumeLastDebug() -> RequestDebug? {
+        let d = lastDebug
+        lastDebug = nil
+        return d
+    }
+
     private let session: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 15
@@ -373,9 +390,23 @@ public actor HermesGatewayClient {
     public func fetchSkills(baseURL: URL) async throws -> [SkillDTO] {
         let url = try apiURL(from: baseURL, path: "/api/skills")
         var request = URLRequest(url: url)
+        request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, _) = try await run(request)
-        return try JSONDecoder().decode(SkillsDTO.self, from: data).skills
+        do {
+            let (data, _) = try await run(request)
+            return try JSONDecoder().decode(SkillsDTO.self, from: data).skills
+        } catch {
+            let ns = error as NSError
+            lastDebug = RequestDebug(
+                method: request.httpMethod ?? "GET",
+                url: url.absoluteString,
+                note: "fetchSkills failed",
+                errorDomain: ns.domain,
+                errorCode: ns.code,
+                errorDescription: error.localizedDescription
+            )
+            throw error
+        }
     }
 
     public func fetchSkillContent(baseURL: URL, name: String) async throws -> SkillContentDTO {
