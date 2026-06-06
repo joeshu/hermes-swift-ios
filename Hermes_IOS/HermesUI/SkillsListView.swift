@@ -48,7 +48,7 @@ public struct SkillsListView: View {
             skillEditor(title: "New Skill", name: "", content: "", category: "")
         }
         .sheet(item: $selectedSkill) { skill in
-            SkillDetailView(store: _store, skill: skill, onRefresh: { Task { await loadSkills() } })
+            SkillDetailView(store: store, skill: skill, onRefresh: { Task { await loadSkills() } })
         }
     }
 

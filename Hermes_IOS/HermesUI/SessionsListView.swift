@@ -26,26 +26,26 @@ public struct SessionsListView: View {
                         Task { await performSearch() }
                     }
                 }
-                .toolbar {
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        if !sessions.isEmpty {
-                            Button { Task { await cleanupEmptySessions() } } label: {
-                                Image(systemName: "trash")
-                            }
-                            .disabled(isLoading)
-                        }
-
-                        Button { Task { await loadSessions() } } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .disabled(isLoading)
-
-                        Button { Task { await createNewSession() } } label: {
-                            Image(systemName: "plus")
-                        }
-                        .disabled(isLoading)
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if !sessions.isEmpty {
+                    Button { Task { await cleanupEmptySessions() } } label: {
+                        Image(systemName: "trash")
                     }
+                    .disabled(isLoading)
                 }
+
+                Button { Task { await loadSessions() } } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .disabled(isLoading)
+
+                Button { Task { await createNewSession() } } label: {
+                    Image(systemName: "plus")
+                }
+                .disabled(isLoading)
+            }
         }
         .alert("Cleanup empty sessions", isPresented: $showCleanupAlert) {
             Button("Cancel", role: .cancel) {}
