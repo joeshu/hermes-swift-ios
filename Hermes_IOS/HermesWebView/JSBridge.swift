@@ -10,6 +10,11 @@ import WebKit
 ///   `capability.<name>.<method>` — invoke a registered HermesCapability (camera, share, notifications, ...)
 ///   `meta.info` — return device info (model, OS, app version)
 ///
+/// Added:
+///   `web.fetch` — performs a fetch through WKWebView JS context (bypasses ATS for native URLSession).
+///     Params: { method?, headers?, body? }
+///     The path is prepended with the current endpoint base URL.
+///
 /// Hermes-agent code running in the WKWebView calls:
 ///   const photo = await window.hermes.invoke("capability.camera.scanQR");
 ///   const me    = await window.hermes.invoke("meta.info");
@@ -63,8 +68,69 @@ public final class JSBridge: NSObject, WKScriptMessageHandler, @unchecked Sendab
         case "meta":
             return try meta(method: parts.dropFirst().joined(separator: "."))
 
+        case "web":
+            return try await web(method: parts.dropFirst().joined(separator: "."), params: params)
+
         default:
             throw CapabilityError.unknownMethod(method)
+        }
+    }
+
+    private func web(method: String, params: [String: Any]) async throws -> AnyCodable {
+        guard method == "fetch" else { throw CapabilityError.unknownMethod("web.\(method)") }
+        guard let path = params["path"] as? String else {
+            throw CapabilityError.missingParam("path")
+        }
+        let httpMethod = (params["method"] as? String) ?? "GET"
+        let headers = (params["headers"] as? [String: String]) ?? [:]
+        let body = params["body"] as? String
+
+        var headerEntries = headers.map { "\"\($0.key)\": \"\($0.value.replacingOccurrences(of: "\"", with: "\\\""))\"" }.joined(separator: ",")
+        let fetchOptions: String
+        if httpMethod == "GET" || body == nil {
+            fetchOptions = "{ method: \"\(httpMethod)\", headers: { \(headerEntries) } }"
+        } else {
+            let escapedBody = body?.replacingOccurrences(of: "'", with: "\\'") ?? ""
+            fetchOptions = "{ method: \"\(httpMethod)\", headers: { \(headerEntries), \"Content-Type\": \"application/json\" }, body: '\(escapedBody)' }"
+        }
+
+        let js = """
+        (async () => {
+          try {
+            const r = await fetch('\(path.replacingOccurrences(of: "'", with: "\\'"))', \(fetchOptions));
+            const text = await r.text();
+            let json;
+            try { json = JSON.parse(text); } catch(_) { json = null; }
+            return JSON.stringify({ ok: r.ok, status: r.status, text, json });
+          } catch(e) {
+            return JSON.stringify({ ok: false, status: 0, text: e.toString(), json: null });
+          }
+        })();
+        """
+
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<AnyCodable, Error>) in
+            DispatchQueue.main.async { [weak self] in
+                self?.webView?.evaluateJavaScript(js) { result, error in
+                    if let error = error {
+                        cont.resume(throwing: CapabilityError.underlying("web.fetch failed: \(error.localizedDescription)"))
+                        return
+                    }
+                    guard let jsonString = result as? String,
+                          let data = jsonString.data(using: .utf8),
+                          let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                        cont.resume(throwing: CapabilityError.underlying("web.fetch: bad response serialization"))
+                        return
+                    }
+                    var out: [String: AnyCodable] = [:]
+                    for (k, v) in dict {
+                        if let s = v as? String { out[k] = .string(s) }
+                        else if let b = v as? Bool { out[k] = .bool(b) }
+                        else if let i = v as? Int { out[k] = .int(i) }
+                        else if let d = v as? Double { out[k] = .double(d) }
+                    }
+                    cont.resume(returning: .object(out))
+                }
+            }
         }
     }
 

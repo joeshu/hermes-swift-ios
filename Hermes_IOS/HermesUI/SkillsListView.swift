@@ -252,10 +252,23 @@ public struct SkillsListView: View {
         errorMessage = nil
         debugInfo = nil
         do {
-            skills = try await HermesGatewayClient.shared.fetchSkills(baseURL: active.url)
+            // Using WebFetchClient to bypass ATS for HTTP endpoints
+            let result = try await WebFetchClient.shared.fetchJSON(
+                HermesGatewayClient.SkillsDTO.self,
+                baseURL: active.url,
+                path: "/api/skills"
+            )
+            skills = result.skills
         } catch {
             errorMessage = error.localizedDescription
-            debugInfo = await HermesGatewayClient.shared.consumeLastDebug()
+            debugInfo = HermesGatewayClient.RequestDebug(
+                method: "GET",
+                url: "WebFetch: \(active.url.absoluteString)/api/skills",
+                note: "WebFetch failed",
+                errorDomain: (error as NSError).domain,
+                errorCode: (error as NSError).code,
+                errorDescription: error.localizedDescription
+            )
         }
         isLoading = false
     }

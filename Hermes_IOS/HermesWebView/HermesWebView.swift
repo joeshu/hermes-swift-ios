@@ -41,6 +41,8 @@ public struct HermesWebView: UIViewRepresentable {
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
         bridge.attach(to: webView)
+        // Register WebFetchClient with the webview
+        Task { await WebFetchClient.shared.register(webView: webView) }
         context.coordinator.isMainPageLoad = true
         statusModel?.markLoading()
         webView.load(makeRequest())
