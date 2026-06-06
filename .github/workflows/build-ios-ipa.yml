@@ -1,102 +1,11 @@
 name: Build iOS IPA
+run-name: Build iOS IPA
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main, master ]
-
-permissions:
-  contents: read
 
 jobs:
-  build-ios:
-    name: Build iOS simulator app
-    runs-on: macos-15
-
+  detect:
+    runs-on: macos-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app
-
-      - name: Show Xcode version
-        run: xcodebuild -version
-
-      - name: Show available schemes and SDKs
-        shell: bash
-        run: |
-          set -euo pipefail
-          xcodebuild -list -project Hermes_IOS.xcodeproj | tee build-schemes.log
-          xcodebuild -showsdks | tee build-sdks.log
-          xcrun simctl list devices available | tee sim-devices.log
-
-      - name: Detect scheme
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY' > detected-scheme.txt
-import subprocess
-text = subprocess.check_output(['xcodebuild','-list','-project','Hermes_IOS.xcodeproj'], text=True)
-lines = text.splitlines()
-schemes = []
-in_schemes = False
-for line in lines:
-    if line.strip() == 'Schemes:':
-        in_schemes = True
-        continue
-    if in_schemes:
-        if not line.strip():
-            break
-        schemes.append(line.strip())
-print(schemes[0] if schemes else 'Hermes_IOS')
-PY
-          echo "SCHEME=$(cat detected-scheme.txt)" >> "$GITHUB_ENV"
-          echo "Detected scheme: $(cat detected-scheme.txt)"
-
-      - name: Resolve Swift packages
-        shell: bash
-        run: |
-          set -euo pipefail
-          xcodebuild -resolvePackageDependencies -project Hermes_IOS.xcodeproj | tee resolve-packages.log
-
-      - name: Build app and retain logs
-        shell: bash
-        run: |
-          set +e
-          mkdir -p build
-          xcodebuild \
-            -project Hermes_IOS.xcodeproj \
-            -scheme "$SCHEME" \
-            -configuration Release \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build/DerivedData \
-            CODE_SIGNING_ALLOWED=NO \
-            build > build/xcodebuild-simulator.log 2>&1
-          echo $? > build/simulator-exit-code.txt
-          tail -n 200 build/xcodebuild-simulator.log | tee build/xcodebuild-simulator-tail.log || true
-          grep -nE "error:|fatal error:|SwiftCompile|Command .* failed|BUILD FAILED|No such module|provision|sign" build/xcodebuild-simulator.log | tail -n 120 | tee build/error-summary.log || true
-          exit 0
-
-      - name: Upload debug artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: hermes-ios-build-debug
-          path: |
-            build/**
-            build-schemes.log
-            build-sdks.log
-            sim-devices.log
-            resolve-packages.log
-            detected-scheme.txt
-          if-no-files-found: warn
-
-      - name: Mark build failed if xcodebuild failed
-        shell: bash
-        run: |
-          set -euo pipefail
-          code=$(cat build/simulator-exit-code.txt)
-          echo "Simulator build exit code: $code"
-          test "$code" = "0"
+      - run: echo hello
