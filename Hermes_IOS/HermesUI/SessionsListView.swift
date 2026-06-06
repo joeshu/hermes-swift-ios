@@ -14,53 +14,53 @@ public struct SessionsListView: View {
 
     public var body: some View {
         NavigationStack {
-            if isLoading && sessions.isEmpty {
-                loadingView
-                    .navigationTitle("Sessions")
-                    .navigationBarTitleDisplayMode(.inline)
-            } else if let errorMessage {
-                errorView(message: errorMessage)
-                    .navigationTitle("Sessions")
-                    .navigationBarTitleDisplayMode(.inline)
-            } else if searchText.isEmpty && sessions.isEmpty {
-                emptyView
-                    .navigationTitle("Sessions")
-                    .navigationBarTitleDisplayMode(.inline)
+            listContent
+                .navigationTitle("Sessions")
+                .navigationBarTitleDisplayMode(.inline)
+        }
+        .searchable(text: $searchText, prompt: "Search sessions…")
+        .onChange(of: searchText) { _, newValue in
+            if newValue.isEmpty {
+                isSearching = false
             } else {
-                listView
-                    .navigationTitle("Sessions")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .searchable(text: $searchText, prompt: "Search sessions…")
-                    .onChange(of: searchText) { _, newValue in
-                        if newValue.isEmpty {
-                            isSearching = false
-                        } else {
-                            isSearching = true
-                            Task { await performSearch() }
-                        }
-                    }
-                    .toolbar {
-                        ToolbarItemGroup(placement: .topBarTrailing) {
-                            if !sessions.isEmpty {
-                                Button { Task { await cleanupEmptySessions() } } label: {
-                                    Image(systemName: "trash")
-                                }
-                                .disabled(isLoading)
-                            }
-
-                            Button { Task { await loadSessions() } } label: {
-                                Image(systemName: "arrow.clockwise")
-                            }
-                            .disabled(isLoading)
-
-                            Button { Task { await createNewSession() } } label: {
-                                Image(systemName: "plus")
-                            }
-                            .disabled(isLoading)
-                        }
-                    }
+                isSearching = true
+                Task { await performSearch() }
             }
         }
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if !sessions.isEmpty {
+                    Button { Task { await cleanupEmptySessions() } } label: {
+                        Image(systemName: "trash")
+                    }
+                    .disabled(isLoading)
+                }
+
+                Button { Task { await loadSessions() } } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .disabled(isLoading)
+
+                Button { Task { await createNewSession() } } label: {
+                    Image(systemName: "plus")
+                }
+                .disabled(isLoading)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var listContent: some View {
+        if isLoading && sessions.isEmpty {
+            loadingView
+        } else if let errorMessage {
+            errorView(message: errorMessage)
+        } else if searchText.isEmpty && sessions.isEmpty {
+            emptyView
+        } else {
+            listView
+        }
+    }
         .alert("Cleanup empty sessions", isPresented: $showCleanupAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Remove empty", role: .destructive) {
