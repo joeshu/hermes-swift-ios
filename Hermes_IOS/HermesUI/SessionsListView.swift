@@ -60,6 +60,19 @@ public struct SessionsListView: View {
         }
     }
 
+    @ViewBuilder
+    private var mainContent: some View {
+        if isLoading && sessions.isEmpty {
+            loadingView
+        } else if let errorMessage {
+            errorView(message: errorMessage)
+        } else if searchText.isEmpty && sessions.isEmpty {
+            emptyView
+        } else {
+            listView
+        }
+    }
+
     private var loadingView: some View {
         VStack(spacing: 12) {
             ProgressView()
