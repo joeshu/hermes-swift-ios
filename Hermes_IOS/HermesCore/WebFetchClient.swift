@@ -44,7 +44,7 @@ public actor WebFetchClient {
         }
 
         let fullURL = WebFetchClient.buildURL(baseURL: baseURL, path: path)
-        var headerParts = headers.map { "\"\($0)\": \"\($0.replacingOccurrences(of: "\"", with: "\\\""))\"" }
+        var headerParts = headers.map { (key, val) in "\"\(key)\": \"\(val.replacingOccurrences(of: "\"", with: "\\\""))\"" }
         headerParts.append("\"Accept\": \"application/json\"")
         let headerJSON = "{ \(headerParts.joined(separator: ", ")) }"
 
