@@ -47,5 +47,6 @@ public actor CapabilityRegistry {
         register(SpeechRecognitionCapability())
         register(QRGeneratorCapability())
         register(DocumentPickerCapability())
+        register(PhotoLibraryCapability())
     }
 }

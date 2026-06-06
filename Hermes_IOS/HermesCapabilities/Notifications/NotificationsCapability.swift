@@ -33,7 +33,7 @@ public final class NotificationsCapability: Capability, @unchecked Sendable {
             throw CapabilityError.permissionDenied
         }
         switch method {
-        case "schedule":
+        case "show", "schedule":
             guard let title = params["title"]?.stringValue else { throw CapabilityError.missingParam("title") }
             let body = params["body"]?.stringValue ?? ""
             let delay = params["delaySeconds"]?.intValue ?? 0
@@ -42,6 +42,10 @@ public final class NotificationsCapability: Capability, @unchecked Sendable {
             content.title = title
             content.body = body
             content.sound = .default
+
+            if let sessionUrl = params["sessionUrl"]?.stringValue {
+                content.userInfo = ["sessionUrl": sessionUrl]
+            }
 
             let trigger: UNNotificationTrigger? = delay > 0
                 ? UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(delay), repeats: false)
