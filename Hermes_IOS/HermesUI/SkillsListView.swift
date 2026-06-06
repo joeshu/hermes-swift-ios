@@ -9,7 +9,6 @@ public struct SkillsListView: View {
     @State private var showDeleteAlert = false
     @State private var skillToDelete: HermesGatewayClient.SkillDTO?
     @State private var showNewSkillSheet = false
-    @State private var showEditor = false
     @State private var editName = ""
     @State private var editContent = ""
     @State private var editCategory = ""
@@ -19,32 +18,22 @@ public struct SkillsListView: View {
 
     public var body: some View {
         NavigationStack {
-            Group {
-                if isLoading {
-                    loadingView
-                } else if let errorMessage {
-                    errorView(message: errorMessage)
-                } else if skills.isEmpty {
-                    emptyView
-                } else {
-                    listView
-                }
-            }
-            .navigationTitle("Skills")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { showNewSkillSheet = true } label: {
-                        Image(systemName: "plus")
-                    }
-                    .disabled(isLoading)
+            mainContent
+                .navigationTitle("Skills")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button { showNewSkillSheet = true } label: {
+                            Image(systemName: "plus")
+                        }
+                        .disabled(isLoading)
 
-                    Button { Task { await loadSkills() } } label: {
-                        Image(systemName: "arrow.clockwise")
+                        Button { Task { await loadSkills() } } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .disabled(isLoading)
                     }
-                    .disabled(isLoading)
                 }
-            }
         }
         .task { await loadSkills() }
         .alert("Delete skill?", isPresented: $showDeleteAlert, presenting: skillToDelete) { skill in
@@ -60,6 +49,19 @@ public struct SkillsListView: View {
         }
         .sheet(item: $selectedSkill) { skill in
             SkillDetailView(store: _store, skill: skill, onRefresh: { Task { await loadSkills() } })
+        }
+    }
+
+    @ViewBuilder
+    private var mainContent: some View {
+        if isLoading {
+            loadingView
+        } else if let errorMessage {
+            errorView(message: errorMessage)
+        } else if skills.isEmpty {
+            emptyView
+        } else {
+            listView
         }
     }
 

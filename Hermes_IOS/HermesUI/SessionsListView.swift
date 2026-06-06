@@ -14,56 +14,46 @@ public struct SessionsListView: View {
 
     public var body: some View {
         NavigationStack {
-            Group {
-                if isLoading && sessions.isEmpty {
-                    loadingView
-                } else if let errorMessage {
-                    errorView(message: errorMessage)
-                } else if searchText.isEmpty && sessions.isEmpty {
-                    emptyView
-                } else {
-                    listView
+            mainContent
+                .navigationTitle("Sessions")
+                .navigationBarTitleDisplayMode(.inline)
+                .searchable(text: $searchText, prompt: "Search sessions…")
+                .onChange(of: searchText) { _, newValue in
+                    if newValue.isEmpty {
+                        isSearching = false
+                    } else {
+                        isSearching = true
+                        Task { await performSearch() }
+                    }
                 }
-            }
-            .navigationTitle("Sessions")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "Search sessions…")
-            .onChange(of: searchText) { _, newValue in
-                if newValue.isEmpty {
-                    isSearching = false
-                } else {
-                    isSearching = true
-                    Task { await performSearch() }
-                }
-            }
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if !sessions.isEmpty {
-                        Button { Task { await cleanupEmptySessions() } } label: {
-                            Image(systemName: "trash")
+                .toolbar {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        if !sessions.isEmpty {
+                            Button { Task { await cleanupEmptySessions() } } label: {
+                                Image(systemName: "trash")
+                            }
+                            .disabled(isLoading)
+                        }
+
+                        Button { Task { await loadSessions() } } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .disabled(isLoading)
+
+                        Button { Task { await createNewSession() } } label: {
+                            Image(systemName: "plus")
                         }
                         .disabled(isLoading)
                     }
-
-                    Button { Task { await loadSessions() } } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(isLoading)
-
-                    Button { Task { await createNewSession() } } label: {
-                        Image(systemName: "plus")
-                    }
-                    .disabled(isLoading)
                 }
+        }
+        .alert("Cleanup empty sessions", isPresented: $showCleanupAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove empty", role: .destructive) {
+                Task { await performCleanup() }
             }
-            .alert("Cleanup empty sessions", isPresented: $showCleanupAlert) {
-                Button("Cancel", role: .cancel) {}
-                Button("Remove empty", role: .destructive) {
-                    Task { await performCleanup() }
-                }
-            } message: {
-                Text("Remove all sessions with no messages? This cannot be undone.")
-            }
+        } message: {
+            Text("Remove all sessions with no messages? This cannot be undone.")
         }
         .task {
             await loadSessions()
