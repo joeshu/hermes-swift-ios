@@ -161,3 +161,5 @@ public struct SessionsListView: View {
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
+
+// SessionRowView was previously defined here; now separate
