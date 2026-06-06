@@ -14,7 +14,7 @@ public struct SessionsListView: View {
 
     public var body: some View {
         NavigationStack {
-            mainContent
+            listOrState
                 .navigationTitle("Sessions")
                 .navigationBarTitleDisplayMode(.inline)
                 .searchable(text: $searchText, prompt: "Search sessions…")
@@ -26,26 +26,26 @@ public struct SessionsListView: View {
                         Task { await performSearch() }
                     }
                 }
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if !sessions.isEmpty {
-                    Button { Task { await cleanupEmptySessions() } } label: {
-                        Image(systemName: "trash")
+                .toolbar {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        if !sessions.isEmpty {
+                            Button { Task { await cleanupEmptySessions() } } label: {
+                                Image(systemName: "trash")
+                            }
+                            .disabled(isLoading)
+                        }
+
+                        Button { Task { await loadSessions() } } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .disabled(isLoading)
+
+                        Button { Task { await createNewSession() } } label: {
+                            Image(systemName: "plus")
+                        }
+                        .disabled(isLoading)
                     }
-                    .disabled(isLoading)
                 }
-
-                Button { Task { await loadSessions() } } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .disabled(isLoading)
-
-                Button { Task { await createNewSession() } } label: {
-                    Image(systemName: "plus")
-                }
-                .disabled(isLoading)
-            }
         }
         .alert("Cleanup empty sessions", isPresented: $showCleanupAlert) {
             Button("Cancel", role: .cancel) {}
@@ -61,7 +61,7 @@ public struct SessionsListView: View {
     }
 
     @ViewBuilder
-    private var mainContent: some View {
+    private var listOrState: some View {
         if isLoading && sessions.isEmpty {
             loadingView
         } else if let errorMessage {

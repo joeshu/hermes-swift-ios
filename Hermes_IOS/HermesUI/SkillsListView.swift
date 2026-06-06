@@ -21,19 +21,19 @@ public struct SkillsListView: View {
             mainContent
                 .navigationTitle("Skills")
                 .navigationBarTitleDisplayMode(.inline)
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { showNewSkillSheet = true } label: {
-                    Image(systemName: "plus")
-                }
-                .disabled(isLoading)
+                .toolbar {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button { showNewSkillSheet = true } label: {
+                            Image(systemName: "plus")
+                        }
+                        .disabled(isLoading)
 
-                Button { Task { await loadSkills() } } label: {
-                    Image(systemName: "arrow.clockwise")
+                        Button { Task { await loadSkills() } } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .disabled(isLoading)
+                    }
                 }
-                .disabled(isLoading)
-            }
         }
         .task { await loadSkills() }
         .alert("Delete skill?", isPresented: $showDeleteAlert, presenting: skillToDelete) { skill in
