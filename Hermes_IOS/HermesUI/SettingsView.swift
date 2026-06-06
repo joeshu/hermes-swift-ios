@@ -13,6 +13,7 @@ public struct SettingsView: View {
     @State private var notificationsError: String?
     @State private var manualWorking = false
     @State private var showingScanner = false
+    @State private var preflightStatus: String?
     private let connectionOnly: Bool
     private let onConnected: (() -> Void)?
     @Environment(\.openURL) private var openURL
@@ -73,7 +74,7 @@ public struct SettingsView: View {
 
                     HStack {
                         Spacer()
-                        Button(manualWorking ? "Connecting…" : "Connect") {
+                        Button(manualWorking ? "Checking…" : "Connect") {
                             Task { await saveManualConnection() }
                         }
                         .buttonStyle(.borderedProminent)
@@ -81,9 +82,15 @@ public struct SettingsView: View {
                         Spacer()
                     }
 
-                    Text("Assumes port 8787 if none are used. Will accept any port after ip. `ip:port`")
+                    Text("If no port is provided, 8787 will be used by default.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+
+                    if let preflightStatus {
+                        Text(preflightStatus)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
 
                     if let manualError {
                         Text(manualError)
@@ -97,14 +104,25 @@ public struct SettingsView: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.secondary)
                         ForEach(store.endpoints) { endpoint in
-                            HStack {
-                                VStack(alignment: .leading) {
+                            HStack(alignment: .top) {
+                                VStack(alignment: .leading, spacing: 4) {
                                     Text(endpoint.displayName)
                                     Text(endpoint.url.absoluteString)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
+
+                                    if let health = store.health(for: endpoint) {
+                                        HStack(spacing: 6) {
+                                            Circle()
+                                                .fill(statusColor(for: health.status))
+                                                .frame(width: 8, height: 8)
+                                            Text(statusText(for: health))
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
                                 }
                                 Spacer()
                                 if store.activeEndpoint?.url == endpoint.url {
@@ -195,11 +213,16 @@ public struct SettingsView: View {
     private func acceptScanned(_ raw: String) async {
         manualWorking = true
         manualError = nil
+        preflightStatus = nil
         defer { manualWorking = false }
         do {
             let payload = try EndpointQR.decode(raw)
             let endpoint = try EndpointQR.endpoint(from: payload)
+            preflightStatus = "Checking connection…"
+            _ = try await EndpointPreflight.validate(endpoint.url)
             try store.add(endpoint, activate: true)
+            store.markEndpointSuccess(endpoint)
+            preflightStatus = nil
             fireConnectSuccessHaptic()
             onConnected?()
         } catch EndpointQR.Error.invalidEncoding {
@@ -207,13 +230,19 @@ public struct SettingsView: View {
         } catch EndpointQR.Error.unsupportedVersion(let v) {
             manualError = "Unsupported connect code version (v\(v)). Update the app and webui to compatible versions."
         } catch {
+            if let url = EndpointURLBuilder.makeURL(from: manualHost) {
+                let endpoint = HermesEndpoint(url: url, displayName: manualHost)
+                store.markEndpointFailure(endpoint, message: error.localizedDescription)
+            }
             manualError = error.localizedDescription
+            preflightStatus = nil
         }
     }
 
     private func saveManualConnection() async {
         manualWorking = true
         manualError = nil
+        preflightStatus = nil
         defer { manualWorking = false }
 
         let host = manualHost.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -231,12 +260,43 @@ public struct SettingsView: View {
             url: url,
             displayName: host
         )
+
         do {
+            preflightStatus = "Checking connection…"
+            _ = try await EndpointPreflight.validate(url)
             try store.add(endpoint, activate: true)
+            store.markEndpointSuccess(endpoint)
+            preflightStatus = nil
             fireConnectSuccessHaptic()
             onConnected?()
         } catch {
+            Loggers.app.error("Endpoint preflight failed: \(error.localizedDescription, privacy: .public)")
+            store.markEndpointFailure(endpoint, message: error.localizedDescription)
             manualError = error.localizedDescription
+            preflightStatus = nil
+        }
+    }
+
+    private func statusColor(for status: EndpointHealth.Status) -> Color {
+        switch status {
+        case .success:
+            return .green
+        case .failure:
+            return .red
+        case .unknown:
+            return .gray
+        }
+    }
+
+    private func statusText(for health: EndpointHealth) -> String {
+        let relative = RelativeDateTimeFormatter().localizedString(for: health.checkedAt, relativeTo: Date())
+        switch health.status {
+        case .success:
+            return "Last check succeeded \(relative)"
+        case .failure:
+            return "Last check failed \(relative)"
+        case .unknown:
+            return "Not checked yet"
         }
     }
 

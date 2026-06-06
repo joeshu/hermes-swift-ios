@@ -13,9 +13,20 @@ public final class NavigationDelegate: NSObject, WKNavigationDelegate, WKUIDeleg
 
     public var pinner: FingerprintPinner?
     public var reconnectGeneration: Int = 0
+    private let statusModel: WebViewStatusModel?
+    private let endpoint: HermesEndpoint
+    private let endpointStore: EndpointStore?
 
-    public init(pinner: FingerprintPinner? = nil) {
+    public init(
+        pinner: FingerprintPinner? = nil,
+        statusModel: WebViewStatusModel? = nil,
+        endpoint: HermesEndpoint,
+        endpointStore: EndpointStore? = nil
+    ) {
         self.pinner = pinner
+        self.statusModel = statusModel
+        self.endpoint = endpoint
+        self.endpointStore = endpointStore
     }
 
     public func webView(_ webView: WKWebView,
@@ -27,7 +38,6 @@ public final class NavigationDelegate: NSObject, WKNavigationDelegate, WKUIDeleg
             return
         }
 
-        // No pinner configured (e.g. plain-HTTP dev endpoint) — fall through to the system trust store.
         guard let pinner else {
             completionHandler(.performDefaultHandling, nil)
             return
@@ -36,7 +46,12 @@ public final class NavigationDelegate: NSObject, WKNavigationDelegate, WKUIDeleg
         if pinner.matches(serverTrust: trust) {
             completionHandler(.useCredential, URLCredential(trust: trust))
         } else {
+            let message = "TLS pinning mismatch. The server certificate does not match the saved fingerprint."
             Loggers.webView.error("TLS pinning mismatch on \(challenge.protectionSpace.host, privacy: .public) — aborting.")
+            Task { @MainActor in
+                self.statusModel?.markFailed(message)
+                self.endpointStore?.markEndpointFailure(self.endpoint, message: message)
+            }
             completionHandler(.cancelAuthenticationChallenge, nil)
         }
     }
@@ -50,6 +65,19 @@ public final class NavigationDelegate: NSObject, WKNavigationDelegate, WKUIDeleg
             return
         }
         decisionHandler(.allow)
+    }
+
+    public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        Task { @MainActor in
+            self.statusModel?.markLoading()
+        }
+    }
+
+    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        Task { @MainActor in
+            self.statusModel?.markReady()
+            self.endpointStore?.markEndpointSuccess(self.endpoint)
+        }
     }
 
     public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -76,19 +104,22 @@ public final class NavigationDelegate: NSObject, WKNavigationDelegate, WKUIDeleg
 
     private func handleFailure(_ error: Error) {
         let ns = error as NSError
-        if ns.code == NSURLErrorCancelled { return }   // -999, ignore (includes pinning aborts)
+        if ns.code == NSURLErrorCancelled { return }
 
         let hint: String
         switch ns.code {
-        case -1022: hint = "Blocked by App Transport Security. Add NSAllowsArbitraryLoadsInWebContent for dev, or use HTTPS."
-        case -1004: hint = "Server refused the connection. Is webui running and reachable from this device?"
-        case -1003: hint = "Hostname could not be resolved."
-        case -1001: hint = "Request timed out."
-        case -1202: hint = "TLS evaluation failed (cert untrusted or mismatched)."
+        case -1022: hint = "Blocked by App Transport Security. Use HTTPS or relax ATS for development."
+        case -1004: hint = "Server refused the connection. Check whether Hermes webui is running and reachable."
+        case -1003: hint = "Hostname could not be resolved. Check the Tailscale IP or hostname."
+        case -1001: hint = "Request timed out. Check your network or Tailscale connection."
+        case -1202: hint = "TLS evaluation failed. The certificate may be untrusted or mismatched."
         default:    hint = ns.localizedDescription
         }
         Loggers.webView.error("Navigation failed (\(ns.code, privacy: .public)): \(hint, privacy: .public)")
-        // TODO: surface to user via an error overlay; logging only for now.
+        Task { @MainActor in
+            self.statusModel?.markFailed(hint)
+            self.endpointStore?.markEndpointFailure(self.endpoint, message: hint)
+        }
     }
 
     public func webView(_ webView: WKWebView,

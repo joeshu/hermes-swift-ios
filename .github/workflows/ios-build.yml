@@ -1,0 +1,85 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [ "feat/ios-home-shell", "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build and Archive
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Create LocalSigning config
+        run: |
+          mkdir -p Config
+          if [ -n "${{ secrets.HERMES_DEVELOPMENT_TEAM }}" ]; then
+            echo "HERMES_DEVELOPMENT_TEAM = ${{ secrets.HERMES_DEVELOPMENT_TEAM }}" > Config/LocalSigning.xcconfig
+          fi
+          if [ -n "${{ secrets.HERMES_APP_BUNDLE_IDENTIFIER }}" ]; then
+            echo "HERMES_APP_BUNDLE_IDENTIFIER = ${{ secrets.HERMES_APP_BUNDLE_IDENTIFIER }}" >> Config/LocalSigning.xcconfig
+          fi
+
+      - name: Build (debug)
+        run: |
+          xcodebuild clean build \
+            -project Hermes_IOS.xcodeproj \
+            -scheme Hermes_IOS \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO | xcpretty
+
+      - name: Archive IPA
+        if: github.ref == 'refs/heads/feat/ios-home-shell' || github.ref == 'refs/heads/main'
+        run: |
+          xcodebuild archive \
+            -project Hermes_IOS.xcodeproj \
+            -scheme Hermes_IOS \
+            -configuration Release \
+            -archivePath build/Hermes_IOS.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO | xcpretty
+
+      - name: Export unsigned IPA (AdHoc style)
+        if: github.ref == 'refs/heads/feat/ios-home-shell' || github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p build/ipa
+          xcodebuild -exportArchive \
+            -archivePath build/Hermes_IOS.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist .github/export-options.plist \
+            -allowProvisioningUpdates 2>&1 | xcpretty || true
+          # If export fails due to signing, copy the .app directly as fallback
+          if [ ! -f build/ipa/*.ipa ]; then
+            echo "Export with signing skipped; copying .app as artifact"
+            cp -R build/Hermes_IOS.xcarchive/Products/Applications/*.app build/ipa/ 2>/dev/null || true
+            ls -la build/ipa/
+          fi
+
+      - name: Upload IPA artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hermes-IOS-unsign
+          path: build/ipa/
+          retention-days: 3
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: ~/Library/Logs/DiagnosticReports/
+          retention-days: 3
