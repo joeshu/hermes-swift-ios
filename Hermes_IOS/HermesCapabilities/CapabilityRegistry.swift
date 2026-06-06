@@ -48,5 +48,6 @@ public actor CapabilityRegistry {
         register(QRGeneratorCapability())
         register(DocumentPickerCapability())
         register(PhotoLibraryCapability())
+        register(PhotoLibraryCapability())
     }
 }
