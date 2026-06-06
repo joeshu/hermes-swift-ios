@@ -4,10 +4,38 @@ run-name: Build iOS IPA
 on:
   workflow_dispatch:
 
+env:
+  LOG_DIR: build
+
 jobs:
   build:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - run: xcodebuild -version
+      - run: xcodebuild -list
       - run: xcodebuild -list -project Hermes_IOS.xcodeproj
+      - run: xcodebuild -resolvePackageDependencies -project Hermes_IOS.xcodeproj
+
+      - name: Build simulator
+        run: |
+          set +e
+          mkdir -p build
+          xcodebuild \
+            -project Hermes_IOS.xcodeproj \
+            -scheme Hermes_IOS \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build > build/sim.log 2>&1
+          echo "EXIT: $?" | tee build/sim-exit.txt
+          tail -n 300 build/sim.log | tee build/sim-tail.log
+          exit 0
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: build/
