@@ -4,9 +4,7 @@ import Foundation
 public actor HermesGatewayClient {
     public static let shared = HermesGatewayClient()
 
-    private struct SessionResponse: Decodable {
-        let sessions: [SessionDTO]
-    }
+    // MARK: - DTOs
 
     public struct SessionDTO: Decodable, Identifiable, Sendable {
         public var id: String { sessionId }
@@ -34,6 +32,61 @@ public actor HermesGatewayClient {
         }
     }
 
+    public struct DeleteResult: Decodable, Sendable {
+        public let ok: Bool
+        public let deleted: Bool?
+    }
+
+    public struct CleanupResult: Decodable, Sendable {
+        public let ok: Bool
+        public let cleaned: Int?
+    }
+
+    public struct ChatStartRequest: Encodable, Sendable {
+        public let sessionId: String
+        public let message: String
+
+        enum CodingKeys: String, CodingKey {
+            case sessionId = "session_id"
+            case message
+        }
+    }
+
+    public struct ChatStartResponse: Decodable, Sendable {
+        public let sessionId: String?
+        public let streamId: String?
+        public let ok: Bool?
+        public let error: String?
+
+        enum CodingKeys: String, CodingKey {
+            case sessionId = "session_id"
+            case streamId = "stream_id"
+            case ok, error
+        }
+    }
+
+    public struct SessionSearchResult: Decodable, Sendable, Identifiable {
+        public var id: String { sessionId }
+        public let sessionId: String
+        public let title: String?
+        public let matchType: String?
+        public let lastMessageAt: Double?
+        public let updatedAt: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case sessionId = "session_id"
+            case title
+            case matchType = "match_type"
+            case lastMessageAt = "last_message_at"
+            case updatedAt = "updated_at"
+        }
+    }
+
+    public struct SearchResponse: Decodable, Sendable {
+        public let sessions: [SessionSearchResult]
+        public let content: Bool?
+    }
+
     /// Helper to decode arbitrary JSON values.
     public struct AnyDecodable: Decodable, Sendable {
         public let value: Any
@@ -49,6 +102,25 @@ public actor HermesGatewayClient {
         }
     }
 
+    private struct SessionResponse: Decodable {
+        let sessions: [SessionDTO]
+    }
+
+    public struct CreateSessionResponse: Decodable, Sendable {
+        public let session: CreatedSessionDTO?
+        public let error: String?
+    }
+
+    public struct CreatedSessionDTO: Decodable, Sendable {
+        public let sessionId: String?
+
+        enum CodingKeys: String, CodingKey {
+            case sessionId = "session_id"
+        }
+    }
+
+    // MARK: - API Methods
+
     public func fetchSessions(baseURL: URL) async throws -> [SessionDTO] {
         let url = baseURL.appendingPathComponent("/api/sessions")
         var request = URLRequest(url: url)
@@ -63,5 +135,64 @@ public actor HermesGatewayClient {
 
         let decoded = try JSONDecoder().decode(SessionResponse.self, from: data)
         return decoded.sessions
+    }
+
+    public func searchSessions(baseURL: URL, query: String, contentSearch: Bool = true) async throws -> [SessionSearchResult] {
+        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            return []
+        }
+        let url = baseURL.appendingPathComponent("/api/sessions/search?q=\(encoded)&content=\(contentSearch ? "1" : "0")")
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 15
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let decoded = try JSONDecoder().decode(SearchResponse.self, from: data)
+        return decoded.sessions
+    }
+
+    public func deleteSession(baseURL: URL, sessionId: String) async throws -> Bool {
+        let url = baseURL.appendingPathComponent("/api/session/\(sessionId)")
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.timeoutInterval = 15
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 204 {
+            return true
+        }
+
+        let result = try? JSONDecoder().decode(DeleteResult.self, from: data)
+        return result?.ok ?? false
+    }
+
+    public func cleanupEmptySessions(baseURL: URL, zeroOnly: Bool = false) async throws -> CleanupResult {
+        let path = zeroOnly ? "/api/sessions/cleanup_zero_message" : "/api/sessions/cleanup"
+        let url = baseURL.appendingPathComponent(path)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [:])
+        request.timeoutInterval = 15
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try JSONDecoder().decode(CleanupResult.self, from: data)
+    }
+
+    public func createSession(baseURL: URL) async throws -> String? {
+        let url = baseURL.appendingPathComponent("/api/session")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["title": "New Session"])
+        request.timeoutInterval = 15
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try? JSONDecoder().decode(CreateSessionResponse.self, from: data)
+        return response?.session?.sessionId
     }
 }

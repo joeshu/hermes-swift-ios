@@ -4,18 +4,22 @@ public struct SessionsListView: View {
     @EnvironmentObject var store: EndpointStore
     @State private var sessions: [HermesGatewayClient.SessionDTO] = []
     @State private var isLoading = true
+    @State private var isSearching = false
     @State private var errorMessage: String?
+    @State private var searchText = ""
+    @State private var searchResults: [HermesGatewayClient.SessionSearchResult] = []
+    @State private var showCleanupAlert = false
 
     public init() {}
 
     public var body: some View {
         NavigationStack {
             Group {
-                if isLoading {
+                if isLoading && sessions.isEmpty {
                     loadingView
                 } else if let errorMessage {
                     errorView(message: errorMessage)
-                } else if sessions.isEmpty {
+                } else if searchText.isEmpty && sessions.isEmpty {
                     emptyView
                 } else {
                     listView
@@ -23,13 +27,42 @@ public struct SessionsListView: View {
             }
             .navigationTitle("Sessions")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: "Search sessions…")
+            .onChange(of: searchText) { _, newValue in
+                if newValue.isEmpty {
+                    isSearching = false
+                } else {
+                    isSearching = true
+                    Task { await performSearch() }
+                }
+            }
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if !sessions.isEmpty {
+                        Button { Task { await cleanupEmptySessions() } } label: {
+                            Image(systemName: "trash")
+                        }
+                        .disabled(isLoading)
+                    }
+
                     Button { Task { await loadSessions() } } label: {
                         Image(systemName: "arrow.clockwise")
                     }
                     .disabled(isLoading)
+
+                    Button { Task { await createNewSession() } } label: {
+                        Image(systemName: "plus")
+                    }
+                    .disabled(isLoading)
                 }
+            }
+            .alert("Cleanup empty sessions", isPresented: $showCleanupAlert) {
+                Button("Cancel", role: .cancel) {}
+                Button("Remove empty", role: .destructive) {
+                    Task { await performCleanup() }
+                }
+            } message: {
+                Text("Remove all sessions with no messages? This cannot be undone.")
             }
         }
         .task {
@@ -73,7 +106,7 @@ public struct SessionsListView: View {
                 .foregroundStyle(.secondary)
             Text("No sessions yet")
                 .font(.headline)
-            Text("Start a conversation with Hermes to see it here.")
+            Text("Tap + to start a new conversation with Hermes.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -83,22 +116,82 @@ public struct SessionsListView: View {
 
     private var listView: some View {
         List {
-            ForEach(sessions) { session in
-                Button {
-                    openSessionInWebView(session)
-                } label: {
-                    SessionRowView(session: session)
+            if isSearching {
+                if searchResults.isEmpty {
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.title2)
+                                .foregroundStyle(.secondary)
+                            Text("No results")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 40)
+                        Spacer()
+                    }
+                    .listRowBackground(Color.clear)
+                } else {
+                    ForEach(searchResults) { result in
+                        searchResultRow(result)
+                    }
                 }
-                .buttonStyle(.plain)
-            }
-            .onDelete { indices in
-                // TODO: delete session via API in the future
+            } else {
+                ForEach(sessions) { session in
+                    sessionRow(session)
+                }
+                .onDelete { indexSet in
+                    Task { await deleteSessions(at: indexSet) }
+                }
             }
         }
         .listStyle(.plain)
         .refreshable {
             await loadSessions()
         }
+    }
+
+    private func sessionRow(_ session: HermesGatewayClient.SessionDTO) -> some View {
+        Button {
+            openSessionInWebView(session.sessionId)
+        } label: {
+            SessionRowView(session: session)
+        }
+        .buttonStyle(.plain)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button("Delete", role: .destructive) {
+                Task { await deleteSession(session.sessionId) }
+            }
+        }
+    }
+
+    private func searchResultRow(_ result: HermesGatewayClient.SessionSearchResult) -> some View {
+        Button {
+            openSessionInWebView(result.sessionId)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(result.title ?? "Untitled session")
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                HStack(spacing: 8) {
+                    if let matchType = result.matchType {
+                        Text("Matched: \(matchType)")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    if let ts = result.lastMessageAt ?? result.updatedAt {
+                        Text(formatTimestamp(ts))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private func loadSessions() async {
@@ -121,13 +214,81 @@ public struct SessionsListView: View {
         isLoading = false
     }
 
-    private func openSessionInWebView(_ session: HermesGatewayClient.SessionDTO) {
-        // Post notification to switch RootView to WebView with this session
+    private func performSearch() async {
+        guard let active = store.activeEndpoint, !searchText.isEmpty else { return }
+
+        do {
+            searchResults = try await HermesGatewayClient.shared.searchSessions(
+                baseURL: active.url,
+                query: searchText,
+                contentSearch: true
+            )
+        } catch {
+            searchResults = []
+        }
+    }
+
+    private func deleteSession(_ sessionId: String) async {
+        guard let active = store.activeEndpoint else { return }
+
+        do {
+            _ = try await HermesGatewayClient.shared.deleteSession(baseURL: active.url, sessionId: sessionId)
+            sessions.removeAll { $0.sessionId == sessionId }
+        } catch {
+            // Error already handled on server side
+        }
+    }
+
+    private func deleteSessions(at indexSet: IndexSet) async {
+        for index in indexSet {
+            guard index < sessions.count else { continue }
+            let session = sessions[index]
+            await deleteSession(session.sessionId)
+        }
+    }
+
+    private func createNewSession() async {
+        guard let active = store.activeEndpoint else { return }
+
+        isLoading = true
+        do {
+            if let sessionId = try await HermesGatewayClient.shared.createSession(baseURL: active.url) {
+                openSessionInWebView(sessionId)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isLoading = false
+    }
+
+    private func cleanupEmptySessions() async {
+        showCleanupAlert = true
+    }
+
+    private func performCleanup() async {
+        guard let active = store.activeEndpoint else { return }
+
+        do {
+            _ = try await HermesGatewayClient.shared.cleanupEmptySessions(baseURL: active.url, zeroOnly: false)
+            await loadSessions()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func openSessionInWebView(_ sessionId: String) {
         NotificationCenter.default.post(
             name: .openSessionInWebView,
             object: nil,
-            userInfo: ["sessionId": session.sessionId]
+            userInfo: ["sessionId": sessionId]
         )
+    }
+
+    private func formatTimestamp(_ ts: Double) -> String {
+        let date = Date(timeIntervalSince1970: ts)
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 
