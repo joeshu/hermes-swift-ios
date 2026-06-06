@@ -19,8 +19,32 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Show available schemes
-        run: xcodebuild -list -project Hermes_IOS.xcodeproj | tee build-schemes.log
+      - name: Show available schemes and SDKs
+        run: |
+          xcodebuild -list -project Hermes_IOS.xcodeproj | tee build-schemes.log
+          xcodebuild -showsdks | tee build-sdks.log
+          xcrun simctl list devices available | tee sim-devices.log
+
+      - name: Detect scheme
+        run: |
+          python3 - <<'PY' > detected-scheme.txt
+import re, subprocess
+text = subprocess.check_output(['xcodebuild','-list','-project','Hermes_IOS.xcodeproj'], text=True)
+lines = text.splitlines()
+schemes = []
+in_schemes = False
+for line in lines:
+    if line.strip() == 'Schemes:':
+        in_schemes = True
+        continue
+    if in_schemes:
+        if not line.strip():
+            break
+        schemes.append(line.strip())
+print(schemes[0] if schemes else 'Hermes_IOS')
+PY
+          echo "SCHEME=$(cat detected-scheme.txt)" >> $GITHUB_ENV
+          echo "Detected scheme: $(cat detected-scheme.txt)"
 
       - name: Resolve Swift packages
         run: xcodebuild -resolvePackageDependencies -project Hermes_IOS.xcodeproj | tee resolve-packages.log
@@ -31,21 +55,27 @@ jobs:
           mkdir -p build
           xcodebuild \
             -project Hermes_IOS.xcodeproj \
-            -scheme Hermes_IOS \
+            -scheme "$SCHEME" \
             -configuration Release \
             -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee build/xcodebuild-simulator.log
 
+      - name: Extract error summary
+        if: failure()
+        run: |
+          grep -nE "error:|fatal error:|SwiftCompile|Command .* failed|BUILD FAILED|No such module|provision|sign" build/xcodebuild-simulator.log | tail -n 120 | tee build/error-summary.log || true
+
       - name: Archive app (unsigned, best effort)
+        if: success()
         run: |
           set -o pipefail
           mkdir -p build
           xcodebuild \
             -project Hermes_IOS.xcodeproj \
-            -scheme Hermes_IOS \
+            -scheme "$SCHEME" \
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath build/Hermes_IOS.xcarchive \
@@ -54,6 +84,7 @@ jobs:
             archive 2>&1 | tee build/xcodebuild-archive.log || true
 
       - name: Package Payload into unsigned IPA if app exists
+        if: success()
         run: |
           mkdir -p build/Payload
           APP_PATH=$(find build/Hermes_IOS.xcarchive -type d -name '*.app' | head -n 1 || true)
@@ -73,5 +104,8 @@ jobs:
           path: |
             build/**
             build-schemes.log
+            build-sdks.log
+            sim-devices.log
             resolve-packages.log
+            detected-scheme.txt
           if-no-files-found: warn
