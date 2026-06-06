@@ -24,12 +24,14 @@ public struct HermesWebView: UIViewRepresentable {
     }
 
     public func makeCoordinator() -> NavigationDelegate {
-        NavigationDelegate(
+        let delegate = NavigationDelegate(
             pinner: endpoint.leafCertFingerprint.map(FingerprintPinner.init),
             statusModel: statusModel,
             endpoint: endpoint,
             endpointStore: endpointStore
         )
+        delegate.isMainPageLoad = true
+        return delegate
     }
 
     public func makeUIView(context: Context) -> WKWebView {
@@ -39,6 +41,7 @@ public struct HermesWebView: UIViewRepresentable {
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
         bridge.attach(to: webView)
+        context.coordinator.isMainPageLoad = true
         statusModel?.markLoading()
         webView.load(makeRequest())
         return webView
@@ -48,6 +51,7 @@ public struct HermesWebView: UIViewRepresentable {
         if uiView.url != endpoint.url || context.coordinator.reconnectGeneration != reconnectGeneration {
             context.coordinator.pinner = endpoint.leafCertFingerprint.map(FingerprintPinner.init)
             context.coordinator.reconnectGeneration = reconnectGeneration
+            context.coordinator.isMainPageLoad = true
             statusModel?.markLoading()
             uiView.load(makeRequest())
         }

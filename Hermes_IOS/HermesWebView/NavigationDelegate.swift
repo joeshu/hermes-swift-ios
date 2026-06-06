@@ -16,6 +16,7 @@ public final class NavigationDelegate: NSObject, WKNavigationDelegate, WKUIDeleg
     private let statusModel: WebViewStatusModel?
     private let endpoint: HermesEndpoint
     private let endpointStore: EndpointStore?
+    private var isMainPageLoad = true
 
     public init(
         pinner: FingerprintPinner? = nil,
@@ -59,17 +60,28 @@ public final class NavigationDelegate: NSObject, WKNavigationDelegate, WKUIDeleg
     public func webView(_ webView: WKWebView,
                         decidePolicyFor navigationAction: WKNavigationAction,
                         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard let scheme = navigationAction.request.url?.scheme?.lowercased(),
-              ["http", "https"].contains(scheme) else {
+        guard let url = navigationAction.request.url,
+              let scheme = url.scheme?.lowercased() else {
             decisionHandler(.cancel)
             return
         }
+
+        guard ["http", "https"].contains(scheme) else {
+            decisionHandler(.cancel)
+            return
+        }
+
+        // Allow all same-origin navigation in the webui
         decisionHandler(.allow)
     }
 
     public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        Task { @MainActor in
-            self.statusModel?.markLoading()
+        // Mark loading only on the initial page load, not on in-page navigation
+        if isMainPageLoad {
+            Task { @MainActor in
+                self.statusModel?.markLoading()
+            }
+            isMainPageLoad = false
         }
     }
 
